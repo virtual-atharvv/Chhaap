@@ -573,4 +573,110 @@ Instrument with PostHog/Plausible (privacy-friendly), plus SQL views for your ow
 
 ---
 
+---
+
+## 21. Phase 2 Delivery Model & WhatsApp Channel (implemented)
+
+This section records the design that was actually built in Phase 2. It
+supplements, and where noted supersedes, the earlier Phase 1 plan.
+
+### 21.1 Delivery model
+
+| Piece | Form | Who uses it | Why |
+|---|---|---|---|
+| Cloud platform | Fastify API + static Customer PWA + Shop Dashboard + WhatsApp bot | Customers, shop owners, admin | Zero install for customers; owner works from any device |
+| Print Agent | Small Windows background app/Scheduled Task (Linux/CUPS for dev) | Runs unattended on the shop PC | Browsers cannot silently print; an agent drives the local spooler |
+
+One order pipeline serves both channels. `orders.channel` is `web` or
+`whatsapp`; pricing, payment verification, job dispatch and deletion are
+shared. The agent remains intentionally dumb: it receives a signed PDF,
+verifies SHA-256, prints, and reports status.
+
+### 21.2 WhatsApp entry and conversation
+
+1. The counter QR opens `https://wa.me/<WHATSAPP_PLATFORM_NUMBER>?text=PRINT%20<shopSlug>`.
+2. The webhook validates `X-Hub-Signature-256` on the exact raw body, responds
+   `200` immediately, then processes asynchronously.
+3. `PRINT <slug>` binds the customer's `wa_id` to a shop for
+   `WA_SESSION_TTL_MINUTES` (default 30). Pre-flight checks shop/printer state
+   before accepting a file.
+4. Sessions are persisted in `wa_sessions` and every transition is idempotent
+   against duplicate `wamid`s. Conversation states:
+   `AWAITING_FILE → CONFIGURING → REVIEW → AWAITING_PAYMENT → TRACKING → DONE`.
+5. Media is downloaded immediately from Meta, then normalised through the same
+   upload validation, page count, colour classification and preview pipeline as
+   web uploads.
+6. The bot only displays server-computed totals. Typing “paid” never changes
+   payment state; only a verified Razorpay webhook moves an order to `queued`.
+
+### 21.3 Provider abstraction
+
+`WhatsAppProvider` has `sendText`, `sendButtons`, `sendList`, `sendDocument`,
+`sendTemplate`, `downloadMedia`, and `markRead`.
+
+- `CloudApiProvider`: Graph API calls using `WHATSAPP_API_VERSION`,
+  `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`; two-step media download;
+  bearer-auth redirect handling; bounded payload sizes.
+- `MockWhatsAppProvider`: records every outbound message and stores media in
+  memory. Default in development/test; powers `pnpm demo:whatsapp`.
+- `WHATSAPP_MODE=mock|cloud`; cloud refuses to boot without all required
+  credentials, and production refuses mock.
+
+### 21.4 Payments and notifications
+
+- Web checkout creates a Razorpay order; WhatsApp creates a UPI-first Payment
+  Link with `reference_id = order.id` and `expire_by = now + 15 min`.
+- Both `payment.captured` and `payment_link.paid` converge on one idempotent
+  handler. Amount and currency are re-checked; event IDs are deduplicated in the
+  database; raw-body HMAC is timing-safe.
+- Settings are frozen once checkout creates a payment intent, so the Razorpay
+  amount can never drift from the order total.
+- Customer notifications are triggered by order state events
+  (`paid`, `printing`, `completed`, `failed`, `refunded`), deduplicated per
+  `(order_id, event)`, retried with backoff, and never block printing. Web
+  customers receive them only when phone + explicit consent were captured.
+- Owner alerts cover printer offline/error, failed orders and a daily summary,
+  with debounce and quiet hours. Owner commands are authenticated by the
+  verified `wa_id`.
+- Outside the 24-hour WhatsApp window, notifications require approved utility
+  templates; a missing template logs `template_required` and is skipped.
+
+### 21.5 Shop-owner auth and agent pairing
+
+- `POST /v1/auth/otp/request` and `/verify` implement WhatsApp OTP login.
+  OTPs are hashed with `OTP_PEPPER`, expire in 5 minutes, lock after 5 wrong
+  attempts, and are rate-limited per phone and IP.
+- Access JWT is short-lived and stored in an httpOnly/SameSite cookie; refresh
+  tokens rotate and are stored hashed with `REFRESH_TOKEN_PEPPER`.
+- Every shop route derives `shop_id` from the JWT, never from a URL/body.
+- Agent pairing codes are 6 digits, single-use, expire in 10 minutes, stored as
+  SHA-256 hashes, and attempt-limited. Agent tokens are stored hashed with
+  `AGENT_TOKEN_PEPPER` and are rotatable.
+
+### 21.6 Delivery deviations from the earlier plan
+
+| Planned | Implemented | Reason |
+|---|---|---|
+| Separate web app/dev server | Static UI served by the API on one port | Pilot simplicity; no reverse proxy required |
+| `@fastify/cookie` | Manual cookie parse/serialise in `auth.ts` | Installed plugin required Fastify 5; avoided a risky framework upgrade |
+| Vitest/tsx test runner | `tsc` → `dist-test` → `node --test` | No new dependencies; TypeScript tests run offline |
+| Redis/R2 | Local filesystem storage + in-process rate limiters | Pilot scope; storage keys and TTLs are abstraction-friendly |
+| Electron tray app | Node agent + PowerShell Scheduled Task scaffold | Smaller install; real Windows packaging remains a human task |
+| LibreOffice/ClamAV execution | Optional binary detection + clear errors | Not installed in this environment; see Next Actions |
+
+### 21.7 Verification status
+
+- Automated: memory repository contract, Postgres contract (conditional on
+  `TEST_DATABASE_URL`), pricing property tests, web order API, tenant isolation,
+  upload validation, deletion after restart, payment webhook hardening,
+  reconciliation, rate limits, WhatsApp webhook signature/dedupe, full mock
+  WhatsApp order/payment/notification flow, opt-out, session expiry, OTP
+  lockout/rate limit, notification failure isolation, `pnpm build`, `pnpm test`,
+  `pnpm demo:whatsapp`.
+- `UNVERIFIED`: live Meta Cloud API calls, template approval, real Razorpay
+  production webhooks, Windows/SumatraPDF/hardware printing, LibreOffice/ClamAV
+  conversion/scanning, real Postgres run in this environment (no `psql`/Docker).
+
+---
+
 *Build the boring parts perfectly. Shops don't pay for features — they pay for never having to think about printing again.*

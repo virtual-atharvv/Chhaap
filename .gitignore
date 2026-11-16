@@ -1,5 +1,8 @@
 node_modules
 dist
+dist-test
+dist-windows
+*.tsbuildinfo
 .turbo
 .next
 .env
@@ -9,5 +12,7 @@ coverage
 tmp
 uploads
 test-prints
+data
+apps/api/data
 .tools
 .cache
