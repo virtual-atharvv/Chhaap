@@ -16,3 +16,4 @@ data
 apps/api/data
 .tools
 .cache
+/pnpm
