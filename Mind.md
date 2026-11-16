@@ -280,6 +280,7 @@ Customer PWA / WhatsApp → Fastify API (`/v1/*`) → Memory or Postgres DB (`pa
 - Replaced JS tests with TypeScript tests: pricing 9, DB contract 9, API/integration 40; added production config and simulated-route tests, WhatsApp E2E/security/OTP/owner tests, notification failure isolation.
 - Added `.github/workflows/ci.yml`, root scripts (`build`, `test`, `dev:api`, `dev:agent`, `demo:whatsapp`, `db:migrate`), `.env.example` names, runbook, WhatsApp setup/templates docs, Windows packaging docs/scripts.
 - Corrected docs: `implementation.md` §21 records WhatsApp/delivery model and deviations; `Mind.md` statuses now distinguish mock-verified from `UNVERIFIED: live Meta/Windows/Postgres`.
+- Final verification: `pnpm build` and `pnpm test` green (58 tests; Postgres contract skipped without `TEST_DATABASE_URL`), `pnpm demo:whatsapp` green. Committed as `3c85146` (shared/db/pricing), `2c07a37` (API/web/WhatsApp), `fc522b9` (agent), `d3fd12d` (docs/CI).
 
 ### 2026-11-16 — Phase 1 Walking Skeleton Implementation
 - Initialized pnpm monorepo with `packages/shared`, `packages/pricing`, `packages/db`, `apps/api`, `apps/agent`, `apps/web`, `infra/`.
