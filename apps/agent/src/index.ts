@@ -1,356 +1,487 @@
 import WebSocket from 'ws';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import type {
   AgentToCloudMessage,
   CloudToAgentMessage,
   PrinterCapabilities,
-  PrintSettings
+  PrinterStatus
 } from '@chhaap/shared';
+import {
+  createDriver,
+  discoverPrinters,
+  queryPrinterStatus,
+  type DriverEnvironment
+} from './drivers.js';
+import { JobLedger } from './ledger.js';
 
-const SERVER_WS_URL = process.env.CHHAAP_SERVER_URL || 'ws://localhost:4000/v1/agent/connect';
-const AGENT_ID = process.env.CHHAAP_AGENT_ID || 'agent-campus-1';
-const AGENT_TOKEN = process.env.CHHAAP_AGENT_TOKEN || 'test_agent_secret_token_123';
-const DATA_DIR = path.join(process.cwd(), 'data', 'agent');
-const SPOOL_DIR = path.join(DATA_DIR, 'spool');
-const OUTPUT_PRINTS_DIR = path.join(process.cwd(), 'test-prints');
-const LEDGER_FILE = path.join(DATA_DIR, 'printed-jobs.json');
+const AGENT_VERSION = '0.2.0';
+const MAX_DOWNLOAD_BYTES = 60 * 1024 * 1024;
+const MAX_RECONNECT_MS = 30_000;
+
+interface AgentConfig {
+  serverUrl: string;
+  agentId: string;
+  token: string;
+  agentName: string;
+  virtualPrinter: boolean;
+  dataDir: string;
+  outputDir: string;
+  sumatraPath?: string;
+}
+
+interface StoredConfig {
+  serverUrl?: string;
+  agentId?: string;
+  token?: string;
+  agentName?: string;
+}
+
+function defaultDataDir(): string {
+  if (process.env.CHHAAP_DATA_DIR) return path.resolve(process.env.CHHAAP_DATA_DIR);
+  if (process.platform === 'win32' && process.env.ProgramData) {
+    return path.join(process.env.ProgramData, 'Chhaap');
+  }
+  return path.resolve(process.cwd(), 'data', 'agent');
+}
+
+function normalizeServerUrl(value: string): { httpBase: string; wsUrl: string } {
+  const trimmed = value.trim().replace(/\/$/, '');
+  const isWs = trimmed.startsWith('ws://') || trimmed.startsWith('wss://');
+  let httpBase: string;
+  let wsUrl: string;
+
+  if (isWs) {
+    wsUrl = trimmed.includes('/v1/agent/connect')
+      ? trimmed
+      : `${trimmed}/v1/agent/connect`;
+    httpBase = wsUrl.replace(/^ws/, 'http').replace(/\/v1\/agent\/connect$/, '');
+  } else {
+    httpBase = trimmed.replace(/\/v1\/agent\/connect$/, '');
+    wsUrl = `${httpBase.replace(/^http/, 'ws')}/v1/agent/connect`;
+  }
+  return { httpBase, wsUrl };
+}
+
+async function readStoredConfig(dataDir: string): Promise<StoredConfig> {
+  try {
+    return JSON.parse(await fs.readFile(path.join(dataDir, 'config.json'), 'utf-8')) as StoredConfig;
+  } catch {
+    return {};
+  }
+}
+
+async function writeStoredConfig(dataDir: string, config: StoredConfig): Promise<void> {
+  await fs.mkdir(dataDir, { recursive: true, mode: 0o700 });
+  const file = path.join(dataDir, 'config.json');
+  await fs.writeFile(file, JSON.stringify(config, null, 2), { mode: 0o600 });
+}
+
+async function pairAgent(
+  httpBase: string,
+  pairingCode: string,
+  agentName: string
+): Promise<StoredConfig> {
+  const res = await fetch(`${httpBase}/v1/agents/pair`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      pairingCode,
+      agentName,
+      os: process.platform
+    })
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    agentId?: string;
+    token?: string;
+    wsUrl?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.agentId || !data.token) {
+    throw new Error(data.error || `Pairing failed (HTTP ${res.status})`);
+  }
+  return {
+    agentId: data.agentId,
+    token: data.token,
+    agentName,
+    serverUrl: data.wsUrl || `${httpBase}/v1/agent/connect`
+  };
+}
+
+async function loadConfig(): Promise<AgentConfig> {
+  const dataDir = defaultDataDir();
+  const stored = await readStoredConfig(dataDir);
+  const serverUrl =
+    process.env.CHHAAP_SERVER_URL || stored.serverUrl || 'http://localhost:4000';
+  const { httpBase } = normalizeServerUrl(serverUrl);
+
+  const pairingCode =
+    process.argv.find((arg) => arg.startsWith('--pair='))?.split('=')[1] ||
+    process.env.CHHAAP_PAIRING_CODE;
+  const agentName = process.env.CHHAAP_AGENT_NAME || stored.agentName || 'Shop PC Agent';
+
+  if (pairingCode) {
+    console.log('[Agent] Pairing with the shop cloud using the one-time code…');
+    const paired = await pairAgent(httpBase, pairingCode, agentName);
+    await writeStoredConfig(dataDir, { ...stored, ...paired });
+    Object.assign(stored, paired);
+  }
+
+  const agentId = process.env.CHHAAP_AGENT_ID || stored.agentId || '';
+  const token = process.env.CHHAAP_AGENT_TOKEN || stored.token || '';
+  if (!agentId || !token) {
+    throw new Error(
+      'Agent is not paired. Generate a pairing code in the shop dashboard and run: node dist/index.js --pair=<code> (or set CHHAAP_PAIRING_CODE).'
+    );
+  }
+
+  return {
+    serverUrl,
+    agentId,
+    token,
+    agentName,
+    virtualPrinter:
+      process.env.CHHAAP_VIRTUAL_PRINTER === '1' ||
+      process.env.CHHAAP_VIRTUAL_PRINTER === 'true',
+    dataDir,
+    outputDir: path.resolve(process.env.CHHAAP_PRINT_OUTPUT_DIR || path.join(dataDir, 'prints')),
+    sumatraPath: process.env.CHHAAP_SUMATRA_PATH
+  };
+}
 
 class PrintAgent {
   private ws: WebSocket | null = null;
-  private printedJobIds = new Set<string>();
-  private reconnectTimeout: NodeJS.Timeout | null = null;
-  private isDestroyed = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectAttempt = 0;
+  private stopped = false;
+  private readonly ledger: JobLedger;
+  private readonly discovered = new Map<string, PrinterCapabilities>();
+  private readonly driverEnv: DriverEnvironment;
+  private lastStatus = new Map<string, PrinterStatus>();
+  private statusTimer: NodeJS.Timeout | null = null;
+  private jobQueue: Promise<void> = Promise.resolve();
+  private readonly printedPrinterIds = new Map<string, string>();
 
-  async init() {
-    await fs.mkdir(SPOOL_DIR, { recursive: true });
-    await fs.mkdir(OUTPUT_PRINTS_DIR, { recursive: true });
-    await this.loadLedger();
+  constructor(
+    private readonly config: AgentConfig,
+    private readonly wsUrl: string,
+    private readonly httpBase: string
+  ) {
+    this.ledger = new JobLedger(path.join(config.dataDir, 'printed-jobs.json'));
+    this.driverEnv = {
+      outputDir: config.outputDir,
+      virtualPrinter: config.virtualPrinter,
+      sumatraPath: config.sumatraPath
+    };
+  }
+
+  async start(): Promise<void> {
+    await this.ledger.load();
+    await fs.mkdir(path.join(this.config.dataDir, 'spool'), { recursive: true, mode: 0o700 });
+    await fs.mkdir(this.config.outputDir, { recursive: true, mode: 0o700 });
+    await this.cleanSpool();
     this.connect();
+    this.statusTimer = setInterval(() => {
+      void this.reportPrinterStatus();
+    }, 45_000);
+    this.statusTimer.unref?.();
   }
 
-  async loadLedger() {
-    try {
-      const data = await fs.readFile(LEDGER_FILE, 'utf-8');
-      const list = JSON.parse(data);
-      if (Array.isArray(list)) {
-        this.printedJobIds = new Set(list);
-      }
-    } catch {
-      this.printedJobIds = new Set();
-    }
-  }
+  private connect(): void {
+    if (this.stopped) return;
+    console.log(`[Agent] Connecting to ${this.wsUrl} …`);
+    const ws = new WebSocket(this.wsUrl, { handshakeTimeout: 15_000 });
+    this.ws = ws;
 
-  async recordJobPrinted(jobId: string) {
-    this.printedJobIds.add(jobId);
-    try {
-      await fs.writeFile(
-        LEDGER_FILE,
-        JSON.stringify(Array.from(this.printedJobIds), null, 2)
-      );
-    } catch (err) {
-      console.error('[Agent] Failed to save ledger:', err);
-    }
-  }
-
-  /**
-   * Discovers system printers or provides virtual CUPS-PDF printer
-   */
-  async discoverPrinters(): Promise<PrinterCapabilities[]> {
-    const printers: PrinterCapabilities[] = [];
-
-    // Check if lpstat exists
-    try {
-      const proc = spawn('lpstat', ['-p', '-d']);
-      let stdout = '';
-      proc.stdout.on('data', (d) => {
-        stdout += d.toString();
-      });
-
-      await new Promise((resolve) => proc.on('close', resolve));
-
-      if (stdout) {
-        const lines = stdout.split('\n');
-        for (const line of lines) {
-          const match = line.match(/^printer\s+(\S+)/);
-          if (match && match[1]) {
-            const name = match[1];
-            printers.push({
-              systemName: name,
-              displayName: `${name} (Local CUPS Printer)`,
-              color: true,
-              duplex: true,
-              papers: ['A4', 'A3', 'Legal'],
-              dpi: 600
-            });
-          }
-        }
-      }
-    } catch {
-      // lpstat not available or failed
-    }
-
-    // Always ensure Virtual CUPS-PDF printer is present for dev/testing
-    if (printers.length === 0) {
-      printers.push({
-        systemName: 'PDF',
-        displayName: 'Virtual CUPS-PDF (Paperless Testing)',
-        color: true,
-        duplex: true,
-        papers: ['A4', 'A3', 'Legal'],
-        dpi: 600
-      });
-    }
-
-    return printers;
-  }
-
-  connect() {
-    if (this.isDestroyed) return;
-
-    console.log(`[Agent] Connecting outbound to cloud gateway at ${SERVER_WS_URL}...`);
-    this.ws = new WebSocket(SERVER_WS_URL);
-
-    this.ws.on('open', async () => {
-      console.log('[Agent] WebSocket connection established! Sending handshake hello...');
-      const discoveredPrinters = await this.discoverPrinters();
-
-      const helloMsg: AgentToCloudMessage = {
-        type: 'hello',
-        agentId: AGENT_ID,
-        token: AGENT_TOKEN,
-        version: '0.1.0',
-        os: process.platform,
-        printers: discoveredPrinters
-      };
-
-      this.ws?.send(JSON.stringify(helloMsg));
+    ws.on('open', () => {
+      void this.sendHello();
     });
 
-    this.ws.on('message', async (data: Buffer | string) => {
+    ws.on('message', (raw: Buffer | string) => {
+      let message: CloudToAgentMessage;
       try {
-        const msg: CloudToAgentMessage = JSON.parse(data.toString());
-
-        if (msg.type === 'ack') {
-          console.log('[Agent] Successfully authenticated with Cloud Gateway! Ready for print jobs.');
-        } else if (msg.type === 'ping') {
-          const pong: AgentToCloudMessage = {
-            type: 'pong',
-            timestamp: Date.now()
-          };
-          this.ws?.send(JSON.stringify(pong));
-        } else if (msg.type === 'job.dispatch') {
-          await this.handleJobDispatch(msg);
-        } else if (msg.type === 'error') {
-          console.error('[Agent] Cloud error:', msg.message);
-        }
-      } catch (err) {
-        console.error('[Agent] Error processing cloud message:', err);
+        message = JSON.parse(raw.toString()) as CloudToAgentMessage;
+      } catch {
+        console.warn('[Agent] Ignoring malformed cloud message');
+        return;
       }
+      void this.handleMessage(message);
     });
 
-    this.ws.on('close', (code, reason) => {
-      console.warn(`[Agent] Connection closed (${code}: ${reason.toString()}). Reconnecting in 5s...`);
+    ws.on('close', (code, reason) => {
+      if (this.ws === ws) this.ws = null;
+      if (this.stopped) return;
+      if (code === 4000 || code === 4001) {
+        console.error(`[Agent] Authentication/permanent failure (${code}: ${reason.toString()}). Re-pair required.`);
+        return;
+      }
       this.scheduleReconnect();
     });
 
-    this.ws.on('error', (err) => {
+    ws.on('error', (err) => {
       console.error('[Agent] WebSocket error:', err.message);
     });
   }
 
-  scheduleReconnect() {
-    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
-    this.reconnectTimeout = setTimeout(() => {
-      this.connect();
-    }, 5000);
+  private async sendHello(): Promise<void> {
+    try {
+      const printers = await discoverPrinters({ virtualPrinter: this.config.virtualPrinter });
+      this.discovered.clear();
+      for (const printer of printers) this.discovered.set(printer.systemName, printer);
+
+      const hello: AgentToCloudMessage = {
+        type: 'hello',
+        agentId: this.config.agentId,
+        token: this.config.token,
+        version: AGENT_VERSION,
+        os: `${process.platform}-${process.arch}`,
+        printers,
+        unfinishedJobs: this.ledger.unfinished(),
+        unfinishedJobIds: []
+      };
+      this.send(hello);
+    } catch (err) {
+      console.error('[Agent] Could not build hello:', (err as Error).message);
+      this.ws?.close(4003, 'Hello failed');
+    }
   }
 
-  /**
-   * Handles incoming print job from cloud gateway
-   */
-  async handleJobDispatch(msg: Extract<CloudToAgentMessage, { type: 'job.dispatch' }>) {
-    const { jobId, fileUrl, sha256, settings, printerSystemName, documentName } = msg;
-
-    // Idempotency check: did we already print this job?
-    if (this.printedJobIds.has(jobId)) {
-      console.log(`[Agent] Idempotency guard: Job ${jobId} already printed previously. Resending ok.`);
-      const result: AgentToCloudMessage = {
-        type: 'job.result',
-        jobId,
-        ok: true,
-        pagesPrinted: 1
-      };
-      this.ws?.send(JSON.stringify(result));
+  private async handleMessage(message: CloudToAgentMessage): Promise<void> {
+    if (message.type === 'ack') {
+      this.reconnectAttempt = 0;
+      this.printedPrinterIds.clear();
+      for (const printer of message.config.printers ?? []) {
+        this.printedPrinterIds.set(printer.systemName, printer.id);
+      }
+      const minVersion = message.config.minAgentVersion;
+      if (minVersion && compareVersions(AGENT_VERSION, minVersion) < 0) {
+        console.error(
+          `[Agent] This agent (${AGENT_VERSION}) is older than the minimum supported version ${minVersion}. Please update.`
+        );
+      }
+      console.log('[Agent] Paired with cloud gateway. Waiting for print jobs.');
+      await this.reportPrinterStatus(true);
       return;
     }
 
-    console.log(`[Agent] Received print job ${jobId} for "${documentName}" (${settings.copies} copies, ${settings.colorMode}, ${settings.sides})`);
+    if (message.type === 'ping') {
+      this.send({ type: 'pong', timestamp: Date.now() });
+      return;
+    }
 
-    // 1. Send accepted
-    const accepted: AgentToCloudMessage = {
-      type: 'job.accepted',
-      jobId
-    };
-    this.ws?.send(JSON.stringify(accepted));
+    if (message.type === 'error') {
+      console.error('[Agent] Cloud error:', message.message);
+      return;
+    }
 
-    const tempFilePath = path.join(SPOOL_DIR, `job_${jobId}_${Date.now()}.pdf`);
+    if (message.type === 'job.dispatch') {
+      // Serialise jobs: one spooler at a time keeps page accounting and
+      // ledger ordering deterministic.
+      this.jobQueue = this.jobQueue
+        .then(() => this.handleJob(message))
+        .catch((err) => console.error('[Agent] Job queue error:', (err as Error).message));
+    }
+  }
 
-    try {
-      // 2. Download file
-      console.log(`[Agent] Downloading file from ${fileUrl}...`);
-      const response = await fetch(fileUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download file: HTTP ${response.status}`);
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer());
-
-      // 3. Verify SHA-256
-      const actualHash = crypto.createHash('sha256').update(buffer).digest('hex');
-      if (actualHash !== sha256) {
-        throw new Error(`SHA-256 checksum mismatch! Expected ${sha256}, got ${actualHash}`);
-      }
-
-      await fs.writeFile(tempFilePath, buffer);
-
-      // 4. Send progress: spooling
-      const spoolProgress: AgentToCloudMessage = {
-        type: 'job.progress',
-        jobId,
-        state: 'spooling'
-      };
-      this.ws?.send(JSON.stringify(spoolProgress));
-
-      // 5. Execute print
-      console.log(`[Agent] Spooling to printer "${printerSystemName}"...`);
-      const pagesPrinted = await this.executePrint(tempFilePath, printerSystemName, settings, jobId, documentName);
-
-      // 6. Send progress: printing
-      const printProgress: AgentToCloudMessage = {
-        type: 'job.progress',
-        jobId,
-        state: 'printing',
-        pagesPrinted
-      };
-      this.ws?.send(JSON.stringify(printProgress));
-
-      // 7. Privacy: Delete downloaded temporary copy immediately after spooling!
-      await fs.unlink(tempFilePath).catch(() => {});
-      console.log(`[Agent] Privacy: Deleted local temp spool file ${tempFilePath}`);
-
-      // 8. Record in persistent ledger
-      await this.recordJobPrinted(jobId);
-
-      // 9. Send success result
-      const result: AgentToCloudMessage = {
+  private async handleJob(message: Extract<CloudToAgentMessage, { type: 'job.dispatch' }>): Promise<void> {
+    const { jobId, fileUrl, sha256, settings, printerSystemName, documentName, pageCount } = message;
+    const existing = this.ledger.resultFor(jobId);
+    if (existing && (existing.state === 'printed' || existing.state === 'printing' || existing.state === 'spooling')) {
+      // Already printed or was mid-print before a crash. Never print twice.
+      console.log(`[Agent] Job ${jobId} is already ${existing.state}; reporting success without reprinting.`);
+      this.send({
         type: 'job.result',
         jobId,
         ok: true,
-        pagesPrinted
-      };
-      this.ws?.send(JSON.stringify(result));
-      console.log(`[Agent] Job ${jobId} printed successfully! (${pagesPrinted} pages)`);
-    } catch (err: any) {
-      console.error(`[Agent] Job ${jobId} failed:`, err.message);
-      await fs.unlink(tempFilePath).catch(() => {});
+        pagesPrinted: existing.pagesPrinted || Math.max(1, pageCount) * Math.max(1, settings.copies)
+      });
+      return;
+    }
 
-      const result: AgentToCloudMessage = {
+    if (!this.discovered.has(printerSystemName)) {
+      this.send({
         type: 'job.result',
         jobId,
         ok: false,
         pagesPrinted: 0,
-        error: err.message
-      };
-      this.ws?.send(JSON.stringify(result));
+        error: `printer_not_found: ${printerSystemName}`
+      });
+      return;
     }
-  }
 
-  /**
-   * Executes printing command (CUPS lp or virtual printer simulation)
-   */
-  async executePrint(
-    filePath: string,
-    printerName: string,
-    settings: PrintSettings,
-    jobId: string,
-    documentName: string
-  ): Promise<number> {
-    // Check if real lp command is available
-    let lpAvailable = false;
+    console.log(`[Agent] Job ${jobId}: "${documentName}" → ${printerSystemName}`);
+    this.send({ type: 'job.accepted', jobId });
+
+    const tempPath = path.join(
+      this.config.dataDir,
+      'spool',
+      `job_${jobId.replace(/[^a-zA-Z0-9-]/g, '_')}_${Date.now()}.pdf`
+    );
+
     try {
-      const check = spawn('which', ['lp']);
-      await new Promise((resolve, reject) => {
-        check.on('close', (code) => {
-          if (code === 0) lpAvailable = true;
-          resolve(true);
-        });
-        check.on('error', () => resolve(true));
+      await this.ledger.set(jobId, 'downloading', { documentName });
+      this.send({ type: 'job.progress', jobId, state: 'downloading' });
+
+      const buffer = await this.download(fileUrl);
+      const actualHash = crypto.createHash('sha256').update(buffer).digest('hex');
+      if (actualHash !== sha256) {
+        throw new HashMismatchError(`hash_mismatch: expected ${sha256}, got ${actualHash}`);
+      }
+
+      await fs.writeFile(tempPath, buffer, { mode: 0o600 });
+      await this.ledger.set(jobId, 'spooling', { documentName });
+      this.send({ type: 'job.progress', jobId, state: 'spooling' });
+
+      const driver = createDriver(printerSystemName, this.driverEnv);
+      await this.ledger.set(jobId, 'printing', { documentName });
+      this.send({ type: 'job.progress', jobId, state: 'printing' });
+
+      const result = await driver.print(tempPath, {
+        settings,
+        pageCount,
+        documentName,
+        jobId
       });
-    } catch {
-      lpAvailable = false;
-    }
 
-    if (lpAvailable && printerName !== 'PDF') {
-      // Execute CUPS lp command (implementation.md §5.3.1)
-      const args = [
-        '-d',
-        printerName,
-        '-n',
-        settings.copies.toString(),
-        '-o',
-        settings.sides === 'duplex' ? 'sides=two-sided-long-edge' : 'sides=one-sided',
-        '-o',
-        settings.colorMode === 'bw' ? 'ColorModel=Gray' : 'ColorModel=Color',
-        '-o',
-        `media=${settings.paperSize}`,
-        '-o',
-        `number-up=${settings.pagesPerSheet || 1}`,
-        filePath
-      ];
-
-      return new Promise((resolve, reject) => {
-        const proc = spawn('lp', args);
-        let stderr = '';
-        proc.stderr.on('data', (d) => {
-          stderr += d.toString();
-        });
-        proc.on('close', (code) => {
-          if (code === 0) {
-            resolve(settings.copies);
-          } else {
-            reject(new Error(`CUPS lp command failed (code ${code}): ${stderr}`));
-          }
-        });
+      await this.ledger.set(jobId, 'printed', {
+        pagesPrinted: result.pagesPrinted,
+        documentName
       });
-    } else {
-      // Virtual CUPS-PDF printer mode (dev & testing loop)
-      // Save to OUTPUT_PRINTS_DIR
-      const cleanDocName = documentName.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const outPath = path.join(OUTPUT_PRINTS_DIR, `PRINTED_${jobId}_${cleanDocName}`);
-      await fs.copyFile(filePath, outPath);
-
-      // Simulate realistic print spool time (400ms)
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      console.log(`[Virtual CUPS-PDF] Saved printed output to ${outPath}`);
-      return settings.copies;
+      this.send({
+        type: 'job.result',
+        jobId,
+        ok: true,
+        pagesPrinted: result.pagesPrinted
+      });
+      console.log(`[Agent] Job ${jobId} printed (${result.pagesPrinted} pages).`);
+    } catch (err) {
+      await this.ledger.set(jobId, 'failed', { documentName });
+      const messageText =
+        err instanceof HashMismatchError ? err.message : `print_failed: ${(err as Error).message}`;
+      console.error(`[Agent] Job ${jobId} failed: ${messageText}`);
+      this.send({
+        type: 'job.result',
+        jobId,
+        ok: false,
+        pagesPrinted: 0,
+        error: messageText
+      });
+    } finally {
+      // Privacy: the spool copy is removed even when the spooler failed.
+      await fs.unlink(tempPath).catch(() => {});
     }
   }
 
-  stop() {
-    this.isDestroyed = true;
-    if (this.reconnectTimeout) clearTimeout(this.reconnectTimeout);
-    if (this.ws) this.ws.close();
+  private async download(url: string): Promise<Buffer> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60_000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`download_failed: HTTP ${res.status}`);
+      const length = Number(res.headers.get('content-length') || 0);
+      if (length > MAX_DOWNLOAD_BYTES) throw new Error('download_failed: file too large');
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.byteLength > MAX_DOWNLOAD_BYTES) {
+        throw new Error('download_failed: file too large');
+      }
+      return buffer;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async reportPrinterStatus(force = false): Promise<void> {
+    for (const [systemName] of this.discovered) {
+      const printerId = this.printedPrinterIds.get(systemName);
+      if (!printerId) continue;
+      const status = await queryPrinterStatus(systemName, this.config.virtualPrinter);
+      if (!force && this.lastStatus.get(systemName) === status) continue;
+      this.lastStatus.set(systemName, status);
+      this.send({ type: 'printer.status', printerId, status });
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer || this.stopped) return;
+    const base = Math.min(MAX_RECONNECT_MS, 1000 * 2 ** this.reconnectAttempt);
+    const jitter = base * (0.7 + Math.random() * 0.6);
+    this.reconnectAttempt++;
+    const delay = Math.round(jitter);
+    console.log(`[Agent] Reconnecting in ${delay} ms (attempt ${this.reconnectAttempt}).`);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
+    this.reconnectTimer.unref?.();
+  }
+
+  private send(message: AgentToCloudMessage): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    try {
+      this.ws.send(JSON.stringify(message));
+    } catch (err) {
+      console.warn('[Agent] Could not send message:', (err as Error).message);
+    }
+  }
+
+  private async cleanSpool(): Promise<void> {
+    const spoolDir = path.join(this.config.dataDir, 'spool');
+    try {
+      const files = await fs.readdir(spoolDir);
+      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+      for (const file of files) {
+        const full = path.join(spoolDir, file);
+        try {
+          const stat = await fs.stat(full);
+          if (stat.mtimeMs < cutoff) await fs.unlink(full);
+        } catch {
+          // ignore individual files
+        }
+      }
+    } catch {
+      // spool does not exist yet
+    }
+  }
+
+  stop(): void {
+    this.stopped = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.statusTimer) clearInterval(this.statusTimer);
+    this.ws?.close(1000, 'Agent shutting down');
   }
 }
 
-const agent = new PrintAgent();
-agent.init().catch(console.error);
+class HashMismatchError extends Error {}
 
-process.on('SIGINT', () => {
-  agent.stop();
-  process.exit(0);
+function compareVersions(a: string, b: string): number {
+  const parse = (v: string) => v.split('.').map((n) => parseInt(n, 10) || 0);
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+async function main(): Promise<void> {
+  const config = await loadConfig();
+  const normalized = normalizeServerUrl(config.serverUrl);
+  const agent = new PrintAgent(config, normalized.wsUrl, normalized.httpBase);
+
+  const shutdown = () => {
+    console.log('[Agent] Shutting down…');
+    agent.stop();
+    setTimeout(() => process.exit(0), 300).unref();
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  await agent.start();
+}
+
+main().catch((err) => {
+  console.error('[Agent] Fatal:', (err as Error).message);
+  process.exitCode = 1;
 });
