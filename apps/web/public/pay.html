@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pay · Chhaap</title>
+  <style>
+    :root { --ink:#15202b; --muted:#5c6b7a; --brand:#0f766e; --bg:#f6f8f7; --card:#fff; --line:#dbe4e1; --ok:#166534; --warn:#9a3412; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+    main { max-width:520px; margin:0 auto; padding:56px 20px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:24px; }
+    h1 { margin:0 0 6px; font-size:26px; }
+    p { color:var(--muted); line-height:1.55; }
+    .amount { font-size:44px; font-weight:750; margin:18px 0 4px; }
+    button { width:100%; background:var(--brand); color:#fff; border:0; border-radius:12px; padding:14px; font:inherit; font-weight:700; cursor:pointer; margin-top:16px; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .token { font-size:32px; font-weight:800; letter-spacing:2px; color:var(--ok); margin:14px 0; }
+    .err { color:var(--warn); font-weight:600; }
+    .ok { color:var(--ok); font-weight:650; }
+    .muted { font-size:13px; color:var(--muted); }
+    .row { display:flex; gap:8px; flex-wrap:wrap; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; background:#e6efed; font-size:13px; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <p class="muted" style="margin:0">Chhaap secure payment</p>
+    <h1 id="shop">Loading…</h1>
+    <div class="amount" id="amount">—</div>
+    <p class="muted" id="status-line">Checking payment link…</p>
+
+    <div id="pay-area" class="hidden">
+      <p>UPI-first payment. The shop starts printing only after the payment is verified.</p>
+      <button id="pay">Pay now (simulated)</button>
+    </div>
+
+    <div id="done-area" class="hidden">
+      <p class="ok">Payment received. Keep this pickup token:</p>
+      <div class="token" id="token">—</div>
+      <p id="order-status" class="muted">Payment verified. The job is joining the print queue.</p>
+      <a href="/">Done</a>
+    </div>
+
+    <p class="err" id="error"></p>
+  </div>
+  <p class="muted">Never share this payment page link. Files are deleted automatically after printing.</p>
+</main>
+<script>
+  const linkId = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+  const $ = (id) => document.getElementById(id);
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, { ...options });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+    if (!res.ok) throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+    return data;
+  }
+
+  function money(paise) { return '₹' + (paise / 100).toFixed(2); }
+
+  let pollTimer = null;
+
+  function render(data) {
+    $('shop').textContent = data.shopName || 'Print shop';
+    $('amount').textContent = money(data.amountPaise);
+    $('status-line').textContent = 'Status: ' + data.status;
+    if (data.token || ['queued', 'printing', 'completed'].includes(data.status)) {
+      $('pay-area').classList.add('hidden');
+      $('done-area').classList.remove('hidden');
+      if (data.token) $('token').textContent = data.token;
+      if (data.status === 'completed') $('order-status').textContent = 'Ready for pickup at the counter.';
+      else if (data.status === 'printing') $('order-status').textContent = 'Printing now…';
+      else if (data.status === 'queued') $('order-status').textContent = 'In the print queue.';
+      if (data.status === 'completed' && pollTimer) clearInterval(pollTimer);
+    } else if (data.expired) {
+      $('status-line').textContent = 'This payment link has expired. Please create a new order.';
+    }
+  }
+
+  async function refresh() {
+    const data = await api('/v1/pay/' + encodeURIComponent(linkId));
+    render(data);
+  }
+
+  $('pay').addEventListener('click', async () => {
+    $('pay').disabled = true;
+    $('error').textContent = '';
+    try {
+      await api('/v1/pay/' + encodeURIComponent(linkId) + '/pay', { method: 'POST' });
+      $('done-area').classList.remove('hidden');
+      $('pay-area').classList.add('hidden');
+      $('status-line').textContent = 'Payment captured. Waiting for the print agent…';
+      await refresh();
+      pollTimer = setInterval(() => refresh().catch(() => {}), 2000);
+    } catch (err) {
+      $('error').textContent = err.message;
+      $('pay').disabled = false;
+    }
+  });
+
+  (async function init() {
+    try {
+      const data = await api('/v1/pay/' + encodeURIComponent(linkId));
+      render(data);
+      if (data.status === 'awaiting_payment' && !data.token) {
+        $('pay-area').classList.remove('hidden');
+      } else if (['queued', 'printing'].includes(data.status)) {
+        pollTimer = setInterval(() => refresh().catch(() => {}), 3000);
+      }
+    } catch (err) {
+      $('error').textContent = err.message;
+    }
+  })();
+</script>
+</body>
+</html>

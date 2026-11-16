@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shop dashboard · Chhaap</title>
+  <style>
+    :root { --ink:#15202b; --muted:#5c6b7a; --brand:#0f766e; --bg:#f4f7f6; --card:#fff; --line:#dbe4e1; --warn:#9a3412; --ok:#166534; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+    main { max-width:1040px; margin:0 auto; padding:26px 18px 72px; }
+    h1 { font-size:24px; margin:0; }
+    h2 { font-size:17px; margin:0 0 12px; }
+    h3 { font-size:15px; margin:16px 0 8px; }
+    p { color:var(--muted); line-height:1.5; }
+    .top { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:15px; padding:18px; margin:14px 0; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    button { background:var(--brand); color:#fff; border:0; border-radius:10px; padding:10px 14px; font:inherit; font-weight:650; cursor:pointer; }
+    button.secondary { background:#e5efed; color:#134e4a; }
+    button.danger { background:#fee2e2; color:#991b1b; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    input, select { padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; background:#fff; }
+    input[type=tel] { width:180px; }
+    .hidden { display:none !important; }
+    .login { max-width:420px; margin:12vh auto 0; }
+    .login input { width:100%; margin:8px 0; }
+    .login button { width:100%; margin-top:6px; }
+    .err { color:var(--warn); font-weight:650; }
+    .ok { color:var(--ok); font-weight:650; }
+    .muted { color:var(--muted); font-size:13px; }
+    .pill { display:inline-block; padding:3px 9px; border-radius:999px; font-size:12px; background:#e6efed; }
+    .pill.good { background:#dcfce7; color:#166534; }
+    .pill.bad { background:#fee2e2; color:#991b1b; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { text-align:left; padding:9px 6px; border-bottom:1px solid #eef3f1; vertical-align:top; }
+    th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+    .code { font-size:34px; font-weight:800; letter-spacing:6px; color:var(--brand); }
+    .num { font-variant-numeric:tabular-nums; }
+    .settings { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); }
+    label.check { display:flex; gap:8px; align-items:center; font-size:14px; color:var(--ink); }
+    .analytics { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); }
+    .metric { background:#f8fbfa; border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .metric b { display:block; font-size:24px; }
+    .metric span { color:var(--muted); font-size:12px; }
+  </style>
+</head>
+<body>
+<main>
+  <section id="login-view" class="login">
+    <div class="card">
+      <h1>Shop sign-in</h1>
+      <p>We send a 6-digit code to the WhatsApp number registered for your shop. In mock mode the API console prints the code.</p>
+      <input id="login-phone" type="tel" inputmode="numeric" maxlength="10" placeholder="Owner mobile number" />
+      <button id="send-otp">Send code</button>
+      <input id="login-code" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" class="hidden" />
+      <button id="verify-otp" class="hidden">Verify &amp; sign in</button>
+      <p class="err" id="login-error"></p>
+      <p class="ok" id="login-message"></p>
+    </div>
+  </section>
+
+  <section id="app-view" class="hidden">
+    <div class="top">
+      <div>
+        <h1 id="shop-name">Shop</h1>
+        <p class="muted" id="shop-line">—</p>
+      </div>
+      <div class="row">
+        <span class="pill" id="agent-pill">Agent…</span>
+        <span class="pill" id="open-pill">Shop…</span>
+        <button class="secondary" id="logout">Sign out</button>
+      </div>
+    </div>
+
+    <div id="global-error" class="err"></div>
+
+    <section class="card">
+      <h2>Today</h2>
+      <div class="analytics" id="analytics"></div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Live queue</h2>
+        <button class="secondary" id="refresh-queue">Refresh</button>
+      </div>
+      <p class="muted" id="queue-note"></p>
+      <div style="overflow:auto">
+        <table>
+          <thead><tr><th>Token</th><th>Status</th><th>Files / settings</th><th>Total</th><th>Actions</th></tr></thead>
+          <tbody id="queue-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Shop settings</h2>
+      <div class="settings">
+        <label class="check"><input id="set-open" type="checkbox" /> Shop is open for orders</label>
+        <label class="check"><input id="set-alerts" type="checkbox" /> Owner WhatsApp alerts</label>
+        <label class="check"><input id="set-printer-alert" type="checkbox" /> Printer offline alerts</label>
+        <label class="check"><input id="set-failed-alert" type="checkbox" /> Failed-order alerts</label>
+        <label class="check"><input id="set-summary" type="checkbox" /> Daily summary</label>
+        <div>
+          <label class="muted" for="set-number">Owner WhatsApp number (E.164, digits only)</label>
+          <input id="set-number" type="tel" placeholder="919876543210" style="width:100%" />
+        </div>
+        <div>
+          <label class="muted" for="set-summary-time">Daily summary time (HH:MM)</label>
+          <input id="set-summary-time" type="text" placeholder="21:00" style="width:100%" />
+        </div>
+        <div>
+          <label class="muted" for="set-min-order">Minimum order (₹)</label>
+          <input id="set-min-order" type="number" min="0" step="1" style="width:100%" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button id="save-settings">Save settings</button>
+        <span id="settings-status" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Print agent</h2>
+      <p>Install the Chhaap agent on the shop PC, then enter this one-time code. It expires in 10 minutes and can be used once.</p>
+      <div class="row">
+        <button id="pair-agent">Generate pairing code</button>
+        <span class="code" id="pair-code"></span>
+      </div>
+      <p class="muted" id="agent-list"></p>
+    </section>
+  </section>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let me = null;
+  let refreshTimer = null;
+
+  async function rawApi(path, options = {}, retry = true) {
+    const res = await fetch(path, { credentials: 'same-origin', ...options });
+    if (res.status === 401 && retry && !path.startsWith('/v1/auth/')) {
+      const refreshed = await fetch('/v1/auth/refresh', { method: 'POST', credentials: 'same-origin' });
+      if (refreshed.ok) return rawApi(path, options, false);
+    }
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+    if (!res.ok) {
+      const error = new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+      error.status = res.status;
+      throw error;
+    }
+    return data;
+  }
+
+  function money(paise) { return '₹' + (paise / 100).toFixed(2); }
+  function esc(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function showApp() {
+    $('login-view').classList.add('hidden');
+    $('app-view').classList.remove('hidden');
+  }
+
+  function showLogin() {
+    $('app-view').classList.add('hidden');
+    $('login-view').classList.remove('hidden');
+  }
+
+  async function loadAll() {
+    try {
+      me = await rawApi('/v1/shop/me');
+      showApp();
+      $('shop-name').textContent = me.shop.name;
+      $('shop-line').textContent = me.shop.slug + ' · ' + (me.user.role === 'owner' ? 'Owner' : 'Staff');
+      const settings = me.shop.settings || {};
+      $('set-open').checked = settings.isOpen !== false;
+      $('set-alerts').checked = settings.ownerAlertsEnabled !== false;
+      $('set-printer-alert').checked = settings.printerOfflineAlertEnabled !== false;
+      $('set-failed-alert').checked = settings.orderFailedAlertEnabled !== false;
+      $('set-summary').checked = settings.dailySummaryEnabled !== false;
+      $('set-number').value = settings.whatsappNumber || '';
+      $('set-summary-time').value = settings.dailySummaryTime || '21:00';
+      $('set-min-order').value = ((settings.minOrderPaise || 0) / 100).toFixed(0);
+      $('open-pill').textContent = settings.isOpen === false ? 'Closed' : 'Open';
+      $('open-pill').className = 'pill ' + (settings.isOpen === false ? 'bad' : 'good');
+      await Promise.all([loadQueue(), loadAnalytics(), loadAgents()]);
+      if (!refreshTimer) refreshTimer = setInterval(() => { loadQueue().catch(() => {}); }, 15000);
+    } catch (err) {
+      if (err.status === 401) showLogin();
+      else $('global-error').textContent = err.message;
+    }
+  }
+
+  async function loadQueue() {
+    const data = await rawApi('/v1/shop/queue');
+    $('agent-pill').textContent = data.agentOnline ? 'Agent online' : 'Agent offline';
+    $('agent-pill').className = 'pill ' + (data.agentOnline ? 'good' : 'bad');
+    $('queue-note').textContent = data.orders.length + ' active order(s).';
+    $('queue-body').innerHTML = data.orders.map(({ order, items }) => {
+      const files = items.map((item) =>
+        esc(item.file ? item.file.originalName : 'file') + ' · ' + (item.file ? item.file.pageCount : '?') + 'p · ' +
+        esc(item.settings.copies) + '× · ' + esc(item.settings.colorMode) + ' · ' + esc(item.settings.sides)
+      ).join('<br />');
+      const actions = [];
+      if (['draft', 'awaiting_payment', 'paid', 'queued', 'printing', 'failed'].includes(order.status)) {
+        actions.push('<button class="danger" data-act="cancel" data-id="' + esc(order.id) + '">Cancel/refund</button>');
+      }
+      if (['completed', 'failed', 'queued'].includes(order.status)) {
+        actions.push('<button class="secondary" data-act="reprint" data-id="' + esc(order.id) + '">Reprint</button>');
+      }
+      if (order.status === 'completed') {
+        actions.push('<button class="secondary" data-act="collect" data-id="' + esc(order.id) + '">Collected</button>');
+      }
+      return '<tr><td><b>' + esc(order.token) + '</b><br /><span class="muted">' + esc(order.channel) + '</span></td>' +
+        '<td><span class="pill">' + esc(order.status) + '</span></td>' +
+        '<td>' + files + '</td><td class="num">' + money(order.totalPaise) + '</td>' +
+        '<td><div class="row">' + actions.join('') + '</div></td></tr>';
+    }).join('') || '<tr><td colspan="5" class="muted">No active orders.</td></tr>';
+  }
+
+  async function loadAnalytics() {
+    const a = await rawApi('/v1/shop/analytics');
+    $('analytics').innerHTML = [
+      ['Revenue today', '₹' + a.todayRevenueRupees],
+      ['Orders today', a.totalOrders],
+      ['B&W pages', a.totalBwPages],
+      ['Colour pages', a.totalColorPages],
+      ['Sheets', a.totalSheets]
+    ].map(([label, value]) => '<div class="metric"><b>' + esc(value) + '</b><span>' + esc(label) + '</span></div>').join('');
+  }
+
+  async function loadAgents() {
+    const data = await rawApi('/v1/shop/agents');
+    $('agent-list').textContent = data.agents.length
+      ? data.agents.map((a) => a.name + ' · ' + a.status + (a.lastSeenAt ? ' · last seen ' + new Date(a.lastSeenAt).toLocaleString() : '')).join('\n')
+      : 'No agent paired yet.';
+  }
+
+  $('send-otp').addEventListener('click', async () => {
+    $('login-error').textContent = '';
+    $('login-message').textContent = '';
+    const phone = $('login-phone').value.trim();
+    try {
+      const result = await rawApi('/v1/auth/otp/request', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone })
+      });
+      $('login-message').textContent = result.message + (result.expiresAt ? ' Expires ' + new Date(result.expiresAt).toLocaleTimeString() + '.' : '');
+      $('login-code').classList.remove('hidden');
+      $('verify-otp').classList.remove('hidden');
+      $('login-code').focus();
+    } catch (err) {
+      $('login-error').textContent = err.message;
+    }
+  });
+
+  $('verify-otp').addEventListener('click', async () => {
+    $('login-error').textContent = '';
+    const phone = $('login-phone').value.trim();
+    const code = $('login-code').value.trim();
+    try {
+      await rawApi('/v1/auth/otp/verify', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ phone, code })
+      });
+      await loadAll();
+    } catch (err) {
+      $('login-error').textContent = err.message;
+    }
+  });
+
+  $('logout').addEventListener('click', async () => {
+    await fetch('/v1/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    if (refreshTimer) clearInterval(refreshTimer);
+    location.reload();
+  });
+
+  $('refresh-queue').addEventListener('click', () => loadQueue().catch((err) => { $('global-error').textContent = err.message; }));
+
+  $('queue-body').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-act]');
+    if (!button) return;
+    const id = button.dataset.id;
+    const act = button.dataset.act;
+    button.disabled = true;
+    $('global-error').textContent = '';
+    try {
+      if (act === 'cancel') await rawApi('/v1/shop/orders/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+      if (act === 'reprint') await rawApi('/v1/shop/orders/' + encodeURIComponent(id) + '/reprint', { method: 'POST' });
+      if (act === 'collect') await rawApi('/v1/shop/orders/' + encodeURIComponent(id) + '/collect', { method: 'POST' });
+      await loadQueue();
+    } catch (err) {
+      $('global-error').textContent = err.message;
+      button.disabled = false;
+    }
+  });
+
+  $('save-settings').addEventListener('click', async () => {
+    $('settings-status').textContent = 'Saving…';
+    $('settings-status').className = 'muted';
+    try {
+      const body = {
+        isOpen: $('set-open').checked,
+        ownerAlertsEnabled: $('set-alerts').checked,
+        printerOfflineAlertEnabled: $('set-printer-alert').checked,
+        orderFailedAlertEnabled: $('set-failed-alert').checked,
+        dailySummaryEnabled: $('set-summary').checked,
+        dailySummaryTime: $('set-summary-time').value.trim() || '21:00',
+        minOrderPaise: Math.round((parseFloat($('set-min-order').value) || 0) * 100)
+      };
+      const number = $('set-number').value.trim();
+      if (number) body.whatsappNumber = number;
+      await rawApi('/v1/shop/settings', {
+        method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
+      });
+      $('settings-status').textContent = 'Saved.';
+      $('settings-status').className = 'ok';
+      await loadAll();
+    } catch (err) {
+      $('settings-status').textContent = err.message;
+      $('settings-status').className = 'err';
+    }
+  });
+
+  $('pair-agent').addEventListener('click', async () => {
+    $('pair-code').textContent = '';
+    try {
+      const data = await rawApi('/v1/shop/agents/code', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Shop PC Agent' })
+      });
+      $('pair-code').textContent = data.pairingCode;
+      await loadAgents();
+    } catch (err) {
+      $('global-error').textContent = err.message;
+    }
+  });
+
+  loadAll().catch(() => showLogin());
+</script>
+</body>
+</html>

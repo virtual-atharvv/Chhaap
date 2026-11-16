@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chhaap — print from your phone</title>
+  <style>
+    :root { color-scheme: light; --ink:#15202b; --muted:#5c6b7a; --brand:#0f766e; --bg:#f6f8f7; --card:#fff; --line:#dbe4e1; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+    main { max-width: 760px; margin: 0 auto; padding: 48px 20px 64px; }
+    .badge { display:inline-block; background:#ccfbf1; color:#115e59; border-radius:999px; padding:4px 12px; font-size:13px; font-weight:600; }
+    h1 { font-size: clamp(32px, 6vw, 54px); line-height:1.05; margin:20px 0 12px; }
+    p { color:var(--muted); line-height:1.6; }
+    .grid { display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); margin-top:28px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; }
+    .card h2 { margin:0 0 8px; font-size:19px; }
+    .card a.button, button { display:inline-block; background:var(--brand); color:#fff; border:0; border-radius:10px; padding:11px 16px; font-weight:650; text-decoration:none; cursor:pointer; }
+    input { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; margin:10px 0; background:#fff; }
+    .wa { background:#25d366; }
+    .small { font-size:13px; }
+    footer { margin-top:36px; font-size:13px; color:var(--muted); }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    code { background:#eef4f2; padding:2px 6px; border-radius:6px; }
+  </style>
+</head>
+<body>
+<main>
+  <span class="badge">Chhaap pilot</span>
+  <h1>Print the file.<br />Skip the queue.</h1>
+  <p>Scan the shop QR, upload a PDF or photo, choose your settings and pay. The print agent at the counter collects the job automatically. Your file is deleted after printing.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>At the shop</h2>
+      <p class="small">Enter the shop slug from the counter standee.</p>
+      <form id="shop-form">
+        <input id="slug" aria-label="Shop slug" placeholder="campus-xerox" value="campus-xerox" required />
+        <button type="submit">Start printing</button>
+      </form>
+    </section>
+    <section class="card">
+      <h2>Prefer WhatsApp?</h2>
+      <p class="small">Send <code>PRINT campus-xerox</code> to the platform number, then attach your file in the chat.</p>
+      <a class="button wa" href="https://wa.me/919876543210?text=PRINT%20campus-xerox" rel="noopener">Open WhatsApp</a>
+    </section>
+    <section class="card">
+      <h2>Shop owner</h2>
+      <p class="small">Sign in with the WhatsApp OTP sent to your registered number. Manage the queue, printers and rates.</p>
+      <a class="button" href="/shop/campus-xerox">Owner dashboard</a>
+    </section>
+  </div>
+
+  <footer>Chhaap · pay-before-print · files auto-deleted · questions? ask the counter staff.</footer>
+</main>
+<script>
+  document.getElementById('shop-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const slug = document.getElementById('slug').value.trim();
+    if (slug) location.href = '/s/' + encodeURIComponent(slug);
+  });
+</script>
+</body>
+</html>

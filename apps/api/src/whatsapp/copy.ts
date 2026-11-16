@@ -1,0 +1,189 @@
+import type { WaLanguage } from '@chhaap/shared';
+
+export interface CopyStrings {
+  chooseLanguage: string;
+  languageSet: string;
+  welcome: (shopName: string) => string;
+  printerOffline: (shopName: string) => string;
+  shopClosed: (shopName: string) => string;
+  askFile: string;
+  fileAnalyzed: (name: string, pages: number, colorPages: number) => string;
+  chooseColor: string;
+  chooseSides: string;
+  chooseCopies: string;
+  askCopiesOther: string;
+  orderReview: (shopName: string, itemsSummary: string, totalRupees: string) => string;
+  paymentLinkMessage: (url: string, totalRupees: string) => string;
+  paymentReminder: (url: string, minutes: number) => string;
+  paymentConfirmed: (token: string) => string;
+  receipt: (shopName: string, token: string, summary: string, totalRupees: string) => string;
+  printingStarted: (token: string) => string;
+  printReady: (token: string, shopName: string) => string;
+  printFailed: (token: string) => string;
+  refunded: (token: string) => string;
+  optedOut: string;
+  optedIn: string;
+  help: string;
+  canceled: string;
+  invalidFile: (reason?: string) => string;
+  noActiveOrder: string;
+  alreadyPaid: string;
+  sessionExpired: string;
+  ownerOnly: string;
+  payNow: string;
+  changeOptions: string;
+  cancelOrder: string;
+  addFile: string;
+  fileLimit: string;
+  statusLine: (token: string, status: string, totalRupees: string) => string;
+}
+
+export const COPY: Record<WaLanguage, CopyStrings> = {
+  hinglish: {
+    chooseLanguage: 'Namaste! Chhaap me aapka swagat hai. Apni bhasha chunein:',
+    languageSet: 'Theek hai! Ab aap Hinglish me baat kar sakte hain.',
+    welcome: (shop) =>
+      `Welcome to *${shop}* via Chhaap!\n\nBina line me khade hue print karein. Aapki file print hone ke baad automatically delete ho jayegi 🔒`,
+    printerOffline: (shop) =>
+      `Sorry! *${shop}* ka printer abhi offline hai. Kripya counter par check karein. Aap abhi order shuru nahi kar sakte.`,
+    shopClosed: (shop) =>
+      `*${shop}* abhi band hai. Kripya shop khulne ke baad dobara try karein.`,
+    askFile: `Apna PDF document ya photo bhejein jise print karna hai (max 50 MB):`,
+    fileAnalyzed: (name, pages, color) =>
+      `*${name}* mila!\n📄 Total: ${pages} pages (${color} colour pages detect hue).\n\nAb print options select karein:`,
+    chooseColor: `Print mode select karein:`,
+    chooseSides: `Paper sides select karein:`,
+    chooseCopies: `Kitni copies chahiye?`,
+    askCopiesOther: `Kitni copies chahiye? 1 se 100 ke beech number bhejein.`,
+    orderReview: (shop, summary, total) =>
+      `*Order Summary — ${shop}*\n\n${summary}\n\n*Total Amount: ₹${total}*`,
+    paymentLinkMessage: (url, total) =>
+      `Order confirm karne ke liye ₹${total} pay karein:\n👉 ${url}\n\nPayment hote hi printing shuru ho jayegi!`,
+    paymentReminder: (url, minutes) =>
+      `Aapka order ${minutes} minute me expire ho jayega. Payment ke liye:\n👉 ${url}`,
+    paymentConfirmed: (token) =>
+      `Payment Received ✅\nAapka Pickup Token: *${token}*\n\nShop printer par dispatch ho raha hai...`,
+    receipt: (shop, token, summary, total) =>
+      `*Receipt — ${shop}*\nToken: *${token}*\n\n${summary}\n*Paid: ₹${total}*\n\nThank you!`,
+    printingStarted: (token) => `🖨️ Token *${token}* print ho raha hai!`,
+    printReady: (token, shop) =>
+      `🎉 *Print Ready!*\nToken *${token}* counter se collect karein.\nThank you for printing at ${shop}!`,
+    printFailed: (token) =>
+      `⚠️ Print fail ho gaya Token *${token}* ke liye. Hum aapko update denge.`,
+    refunded: (token) =>
+      `Refund process ho gaya hai Token *${token}* ke liye. 3-5 working days me account me aa jayega.`,
+    optedOut: `Aapne notifications stop kar di hain. Dobara shuru karne ke liye START likhein.`,
+    optedIn: `Notifications dobara shuru ho gayi hain. PRINT <shopSlug> likhkar print karein.`,
+    help: `Commands:\n• CANCEL — Current order cancel karein\n• STATUS — Live order status\n• PRINT <shopSlug> — New order\n• STOP — Notifications band karein`,
+    canceled: `Order cancel kar diya gaya hai. New print ke liye 'PRINT <shop>' likhein.`,
+    invalidFile: (reason) =>
+      `File accept nahi ho payi${reason ? `: ${reason}` : ''}. Kripya PDF, JPG, PNG ya Office document bhejein (max 50MB).`,
+    noActiveOrder: `Koi active order nahi mila. Type PRINT <shopSlug> to start.`,
+    alreadyPaid: `Aapka payment verify hone ka wait karein. Payment webhook milte hi printing shuru hogi.`,
+    sessionExpired: `Aapka session expire ho gaya. Type PRINT <shopSlug> to start again.`,
+    ownerOnly: `Yeh command sirf shop owner ke liye hai.`,
+    payNow: `Pay now`,
+    changeOptions: `Change options`,
+    cancelOrder: `Cancel`,
+    addFile: `➕ Add file`,
+    fileLimit: `Ek order me maximum 5 files add kar sakte hain.`,
+    statusLine: (token, status, total) =>
+      `Order *${token}*\nStatus: *${status.toUpperCase()}*\nTotal: ₹${total}`
+  },
+  en: {
+    chooseLanguage: 'Welcome to Chhaap! Please choose your language:',
+    languageSet: 'Great! We will continue in English.',
+    welcome: (shop) =>
+      `Welcome to *${shop}* automated printing kiosk!\n\nZero queues, zero pendrives. Your files are automatically deleted after printing 🔒`,
+    printerOffline: (shop) =>
+      `The printer at *${shop}* is currently offline. Please check with the counter staff. You cannot start an order right now.`,
+    shopClosed: (shop) => `*${shop}* is currently closed. Please try again when the shop is open.`,
+    askFile: `Please send the PDF or image file you wish to print (max 50 MB):`,
+    fileAnalyzed: (name, pages, color) =>
+      `Received *${name}*\n📄 ${pages} pages (${color} colour detected).\n\nPlease choose options:`,
+    chooseColor: `Select colour mode:`,
+    chooseSides: `Select sides:`,
+    chooseCopies: `Select number of copies:`,
+    askCopiesOther: `How many copies? Send a number between 1 and 100.`,
+    orderReview: (shop, summary, total) =>
+      `*Order Summary — ${shop}*\n\n${summary}\n\n*Total: ₹${total}*`,
+    paymentLinkMessage: (url, total) =>
+      `Pay ₹${total} to confirm and print:\n👉 ${url}\n\nPrinting starts as soon as payment is verified.`,
+    paymentReminder: (url, minutes) =>
+      `Your order expires in ${minutes} minutes. Pay here:\n👉 ${url}`,
+    paymentConfirmed: (token) =>
+      `Payment Verified ✅\nYour Pickup Token: *${token}*\n\nDispatching to the printer...`,
+    receipt: (shop, token, summary, total) =>
+      `*Receipt — ${shop}*\nToken: *${token}*\n\n${summary}\n*Paid: ₹${total}*\n\nThank you!`,
+    printingStarted: (token) => `🖨️ Printing started for Token *${token}*!`,
+    printReady: (token, shop) =>
+      `🎉 *Print Ready!*\nCollect your prints using Token *${token}* at ${shop}.`,
+    printFailed: (token) =>
+      `⚠️ Printing failed for Token *${token}*. We will update you shortly.`,
+    refunded: (token) =>
+      `Your refund for Token *${token}* has been initiated. It should reach your account in 3-5 working days.`,
+    optedOut: `You have unsubscribed from notifications. Reply START to opt back in.`,
+    optedIn: `Notifications are back on. Send PRINT <shopSlug> to start printing.`,
+    help: `Commands:\n• CANCEL — Cancel order\n• STATUS — Check order status\n• PRINT <shopSlug> — Start new print\n• STOP — Stop notifications`,
+    canceled: `Order has been canceled. Send PRINT <shopSlug> to start again.`,
+    invalidFile: (reason) =>
+      `We could not accept that file${reason ? `: ${reason}` : ''}. Please send a PDF, JPG, PNG or Office document (max 50 MB).`,
+    noActiveOrder: `No active order found. Send PRINT <shopSlug> to start.`,
+    alreadyPaid: `Please wait for payment verification. Printing starts automatically after the verified webhook.`,
+    sessionExpired: `Your session expired. Send PRINT <shopSlug> to start again.`,
+    ownerOnly: `This command is only available to the shop owner.`,
+    payNow: `Pay now`,
+    changeOptions: `Change options`,
+    cancelOrder: `Cancel`,
+    addFile: `➕ Add file`,
+    fileLimit: `You can add at most 5 files per order.`,
+    statusLine: (token, status, total) =>
+      `Order *${token}*\nStatus: *${status.toUpperCase()}*\nTotal: ₹${total}`
+  },
+  hi: {
+    chooseLanguage: 'छाप में आपका स्वागत है! कृपया अपनी भाषा चुनें:',
+    languageSet: 'ठीक है! अब हम हिंदी में बात करेंगे।',
+    welcome: (shop) =>
+      `*${shop}* प्रिंट सेवा में आपका स्वागत है!\n\nबिना कतार प्रिंट करें। प्रिंट के बाद आपकी फाइल स्वतः डिलीट हो जाएगी 🔒`,
+    printerOffline: (shop) =>
+      `क्षमा करें, *${shop}* का प्रिंटर ऑफलाइन है। कृपया काउंटर पर जांच करें। अभी ऑर्डर शुरू नहीं हो सकता।`,
+    shopClosed: (shop) => `*${shop}* अभी बंद है। कृपया दुकान खुलने पर दोबारा प्रयास करें।`,
+    askFile: `कृपया वह PDF या फोटो भेजें जिसे प्रिंट करना है (अधिकतम 50 MB):`,
+    fileAnalyzed: (name, pages, color) =>
+      `*${name}* प्राप्त हुआ!\n📄 कुल: ${pages} पृष्ठ (${color} रंगीन).\n\nप्रिंट विकल्प चुनें:`,
+    chooseColor: `प्रिंट मोड चुनें:`,
+    chooseSides: `पेज साइड्स चुनें:`,
+    chooseCopies: `कितनी कॉपियां चाहिए?`,
+    askCopiesOther: `कितनी कॉपियां चाहिए? 1 से 100 के बीच संख्या भेजें।`,
+    orderReview: (shop, summary, total) =>
+      `*ऑर्डर विवरण — ${shop}*\n\n${summary}\n\n*कुल राशि: ₹${total}*`,
+    paymentLinkMessage: (url, total) => `प्रिंट करने के लिए ₹${total} का भुगतान करें:\n👉 ${url}`,
+    paymentReminder: (url, minutes) =>
+      `आपका ऑर्डर ${minutes} मिनट में समाप्त हो जाएगा। भुगतान करें:\n👉 ${url}`,
+    paymentConfirmed: (token) => `भुगतान सफल ✅\nटोकन: *${token}*`,
+    receipt: (shop, token, summary, total) =>
+      `*रसीद — ${shop}*\nटोकन: *${token}*\n\n${summary}\n*भुगतान: ₹${total}*`,
+    printingStarted: (token) => `🖨️ टोकन *${token}* प्रिंट हो रहा है...`,
+    printReady: (token, shop) =>
+      `🎉 *प्रिंट तैयार है!*\nटोकन *${token}* दिखाकर काउंटर से प्राप्त करें।`,
+    printFailed: (token) => `⚠️ टोकन *${token}* का प्रिंट विफल रहा।`,
+    refunded: (token) => `टोकन *${token}* का रिफंड शुरू कर दिया गया है (3-5 कार्य दिवस)।`,
+    optedOut: `सूचनाएं बंद कर दी गई हैं। START लिखकर फिर चालू करें।`,
+    optedIn: `सूचनाएं फिर चालू हैं। PRINT <shopSlug> लिखकर प्रिंट करें।`,
+    help: `कमांड: CANCEL, STATUS, PRINT <shop>, STOP`,
+    canceled: `ऑर्डर रद्द कर दिया गया है।`,
+    invalidFile: (reason) =>
+      `फाइल स्वीकार नहीं हुई${reason ? `: ${reason}` : ''}। कृपया PDF, JPG, PNG या Office दस्तावेज़ भेजें।`,
+    noActiveOrder: `कोई सक्रिय ऑर्डर नहीं मिला। PRINT <shopSlug> भेजें।`,
+    alreadyPaid: `कृपया भुगतान सत्यापन की प्रतीक्षा करें।`,
+    sessionExpired: `सत्र समाप्त हो गया। PRINT <shopSlug> भेजें।`,
+    ownerOnly: `यह कमांड केवल दुकान मालिक के लिए है।`,
+    payNow: `भुगतान करें`,
+    changeOptions: `विकल्प बदलें`,
+    cancelOrder: `रद्द करें`,
+    addFile: `➕ फाइल जोड़ें`,
+    fileLimit: `एक ऑर्डर में अधिकतम 5 फाइलें।`,
+    statusLine: (token, status, total) =>
+      `ऑर्डर *${token}*\nस्थिति: *${status.toUpperCase()}*\nकुल: ₹${total}`
+  }
+};

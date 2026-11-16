@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Print · Chhaap</title>
+  <style>
+    :root { color-scheme: light; --ink:#15202b; --muted:#5c6b7a; --brand:#0f766e; --bg:#f6f8f7; --card:#fff; --line:#dbe4e1; --warn:#9a3412; --ok:#166534; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+    main { max-width:720px; margin:0 auto; padding:28px 18px 72px; }
+    header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:22px; }
+    h1 { font-size:26px; margin:0 0 4px; }
+    h2 { font-size:18px; margin:0 0 12px; }
+    p { color:var(--muted); line-height:1.55; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin:14px 0; }
+    label { display:block; font-weight:600; margin:10px 0 6px; font-size:14px; }
+    select, input[type=number], input[type=tel] { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; background:#fff; }
+    input[type=file] { width:100%; padding:10px; border:1px dashed #9db3ad; border-radius:12px; background:#fbfdfc; }
+    .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); }
+    button { background:var(--brand); color:#fff; border:0; border-radius:11px; padding:12px 16px; font:inherit; font-weight:650; cursor:pointer; }
+    button.secondary { background:#e6efed; color:#134e4a; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .pill { display:inline-block; padding:3px 9px; border-radius:999px; font-size:12px; background:#e6efed; color:#134e4a; }
+    .err { color:var(--warn); font-weight:600; }
+    .ok { color:var(--ok); font-weight:600; }
+    .thumb { width:74px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+    .thumbs { display:flex; gap:8px; overflow:auto; padding-top:8px; }
+    .price { font-size:32px; font-weight:750; margin:6px 0; }
+    .muted { color:var(--muted); font-size:13px; }
+    .consent { display:flex; gap:9px; align-items:flex-start; font-size:13px; color:var(--muted); margin-top:10px; }
+    .consent input { margin-top:3px; }
+    .hidden { display:none; }
+    .line { display:flex; justify-content:space-between; gap:12px; padding:3px 0; font-size:14px; }
+    a { color:var(--brand); }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1 id="shop-name">Loading shop…</h1>
+      <p id="shop-meta" class="muted">Checking printer and rates.</p>
+    </div>
+    <span class="pill" id="printer-pill">…</span>
+  </header>
+
+  <section class="card" id="upload-card">
+    <h2>1. Choose your file</h2>
+    <p>PDF, JPG, PNG, DOCX, PPTX or XLSX · up to 50 MB. We count pages and detect colour pages on the server.</p>
+    <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.ppt,.pptx,.xls,.xlsx" />
+    <div class="row" style="margin-top:12px">
+      <button id="upload-btn" type="button">Upload &amp; analyse</button>
+      <span id="upload-status" class="muted"></span>
+    </div>
+    <div id="analysis" class="hidden">
+      <p id="file-summary" class="ok"></p>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+  </section>
+
+  <section class="card hidden" id="options-card">
+    <h2>2. Print options</h2>
+    <div class="grid">
+      <div>
+        <label for="color">Colour</label>
+        <select id="color">
+          <option value="bw">Black &amp; white</option>
+          <option value="smart">Smart (colour pages in colour)</option>
+          <option value="color">All colour</option>
+        </select>
+      </div>
+      <div>
+        <label for="sides">Sides</label>
+        <select id="sides">
+          <option value="single">Single-sided</option>
+          <option value="duplex">Back-to-back</option>
+        </select>
+      </div>
+      <div>
+        <label for="copies">Copies</label>
+        <input id="copies" type="number" min="1" max="100" value="1" />
+      </div>
+      <div>
+        <label for="paper">Paper</label>
+        <select id="paper">
+          <option value="A4">A4</option>
+          <option value="A3">A3</option>
+          <option value="Legal">Legal</option>
+          <option value="Letter">Letter</option>
+        </select>
+      </div>
+    </div>
+    <label style="margin-top:16px">Mobile number (optional)</label>
+    <input id="phone" type="tel" inputmode="numeric" placeholder="10-digit Indian mobile" maxlength="10" />
+    <label class="consent">
+      <input id="consent" type="checkbox" />
+      <span>Send my receipt and pickup updates on WhatsApp. My number is used only for this order. I can reply STOP at any time.</span>
+    </label>
+    <div class="row" style="margin-top:16px">
+      <button id="create-btn" type="button">Create order &amp; see price</button>
+      <span id="create-status" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="card hidden" id="pay-card">
+    <h2>3. Review &amp; pay</h2>
+    <div id="price-lines"></div>
+    <div class="price" id="total">₹0.00</div>
+    <p class="muted" id="pay-note">The shop prints only after payment is verified.</p>
+    <div class="row">
+      <button id="pay-btn" type="button">Pay now</button>
+      <button id="change-btn" class="secondary" type="button">Change options</button>
+    </div>
+    <p class="err hidden" id="pay-error"></p>
+  </section>
+
+  <p class="muted"><a href="/">← Back</a> · Files are deleted automatically after printing.</p>
+</main>
+<script>
+  const slug = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+  const state = { file: null, order: null, token: null, shop: null, price: null };
+  const $ = (id) => document.getElementById(id);
+
+  function showError(id, message) {
+    const el = $(id);
+    el.textContent = message;
+    el.classList.remove('hidden');
+  }
+
+  function money(paise) {
+    return '₹' + (paise / 100).toFixed(2);
+  }
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, { credentials: 'same-origin', ...options });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { error: text }; }
+    if (!res.ok) throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+    return data;
+  }
+
+  function settings() {
+    return {
+      copies: Math.max(1, Math.min(100, parseInt($('copies').value, 10) || 1)),
+      paperSize: $('paper').value,
+      colorMode: $('color').value,
+      sides: $('sides').value
+    };
+  }
+
+  function renderPricing(pricing) {
+    state.price = pricing;
+    const lines = [
+      ['Black & white pages', pricing.bwPagesCount],
+      ['Colour pages', pricing.colorPagesCount],
+      ['Sheets', pricing.sheets],
+      ['Subtotal', money(pricing.subtotalPaise)],
+      ['Convenience fee', money(pricing.feePaise)]
+    ];
+    if (pricing.gstPaise) lines.push(['GST', money(pricing.gstPaise)]);
+    $('price-lines').innerHTML = lines
+      .map(([label, value]) => '<div class="line"><span>' + label + '</span><span>' + value + '</span></div>')
+      .join('');
+    $('total').textContent = money(pricing.totalPaise);
+  }
+
+  async function createOrder() {
+    if (!state.file) return;
+    $('create-status').textContent = 'Creating…';
+    try {
+      const phone = $('phone').value.trim();
+      const consented = $('consent').checked;
+      if (phone && !/^[6-9]\d{9}$/.test(phone)) throw new Error('Enter a valid 10-digit mobile number or leave it blank.');
+      if (phone && !consented) throw new Error('Tick the WhatsApp consent box or clear the phone number.');
+
+      const result = await api('/v1/orders', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          shopSlug: slug,
+          fileId: state.file.fileId,
+          settings: settings(),
+          ...(phone && consented ? { customerPhone: phone, customerPhoneConsent: true } : { customerPhoneConsent: false }),
+          idempotencyKey: 'web:' + state.file.fileId
+        })
+      });
+      state.order = result.order;
+      state.token = result.publicToken || result.order.publicToken;
+      // The order view intentionally hides the public token; the create
+      // response carries it once for this browser session.
+      if (!state.token) {
+        const stored = JSON.parse(sessionStorage.getItem('chhaap_order_tokens') || '{}');
+        state.token = stored[state.order.id];
+      }
+      if (state.token) {
+        const stored = JSON.parse(sessionStorage.getItem('chhaap_order_tokens') || '{}');
+        stored[state.order.id] = state.token;
+        sessionStorage.setItem('chhaap_order_tokens', JSON.stringify(stored));
+      }
+      renderPricing(result.pricing);
+      $('options-card').classList.add('hidden');
+      $('pay-card').classList.remove('hidden');
+      $('pay-note').textContent = state.token
+        ? 'The shop prints only after payment is verified.'
+        : 'Order created, but the access token was not returned. Please start again.';
+      $('pay-btn').disabled = !state.token;
+    } catch (err) {
+      showError('create-status', err.message);
+      $('create-status').className = 'err';
+    }
+  }
+
+  async function changeOptions() {
+    if (!state.order || !state.token) { location.reload(); return; }
+    $('create-status').textContent = 'Updating price…';
+    try {
+      const items = await api('/v1/orders/' + encodeURIComponent(state.order.id) + '?token=' + encodeURIComponent(state.token));
+      const item = items.items[0];
+      if (!item) throw new Error('Order item missing');
+      const result = await api('/v1/orders/' + encodeURIComponent(state.order.id) + '/items/' + encodeURIComponent(item.id), {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: state.token, settings: settings() })
+      });
+      renderPricing(result.pricing);
+      $('pay-card').classList.add('hidden');
+      $('options-card').classList.remove('hidden');
+      $('create-status').textContent = '';
+      $('create-status').className = 'muted';
+    } catch (err) {
+      showError('pay-error', err.message);
+    }
+  }
+
+  $('upload-btn').addEventListener('click', async () => {
+    const file = $('file').files[0];
+    if (!file) { showError('upload-status', 'Choose a file first.'); return; }
+    $('upload-status').textContent = 'Uploading and analysing…';
+    $('upload-status').className = 'muted';
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const data = await api('/v1/uploads', { method: 'POST', body });
+      state.file = data;
+      $('upload-status').textContent = '';
+      $('analysis').classList.remove('hidden');
+      const colourPages = (data.perPageClassification || []).filter((p) => p.isColor).length;
+      $('file-summary').textContent = data.originalName + ' · ' + data.pageCount + ' page(s)' +
+        (colourPages ? ' · ' + colourPages + ' colour' : ' · all B&W');
+      $('thumbs').innerHTML = (data.previewUrls || [])
+        .map((url) => '<img class="thumb" alt="Page preview" src="' + url + '" />')
+        .join('');
+      $('options-card').classList.remove('hidden');
+    } catch (err) {
+      $('upload-status').className = 'err';
+      $('upload-status').textContent = err.message;
+    }
+  });
+
+  $('create-btn').addEventListener('click', createOrder);
+  $('change-btn').addEventListener('click', changeOptions);
+
+  $('pay-btn').addEventListener('click', async () => {
+    if (!state.order || !state.token) return;
+    $('pay-btn').disabled = true;
+    $('pay-error').classList.add('hidden');
+    try {
+      const result = await api('/v1/orders/' + encodeURIComponent(state.order.id) + '/checkout?token=' + encodeURIComponent(state.token), {
+        method: 'POST'
+      });
+      if (!result.shortUrl) throw new Error('Payment link missing');
+      location.href = result.shortUrl;
+    } catch (err) {
+      showError('pay-error', err.message);
+      $('pay-btn').disabled = false;
+    }
+  });
+
+  (async function init() {
+    try {
+      const data = await api('/v1/shops/' + encodeURIComponent(slug));
+      state.shop = data.shop;
+      document.title = data.shop.name + ' · Chhaap';
+      $('shop-name').textContent = data.shop.name;
+      $('shop-meta').textContent = (data.shop.city ? data.shop.city + ' · ' : '') + (data.shop.isOpen ? 'Open now' : 'Closed');
+      const pill = $('printer-pill');
+      pill.textContent = data.shop.printerOnline ? 'Printer online' : 'Printer offline';
+      pill.style.background = data.shop.printerOnline ? '#dcfce7' : '#fee2e2';
+      pill.style.color = data.shop.printerOnline ? '#166534' : '#991b1b';
+      if (!data.shop.isOpen) showError('upload-status', 'This shop is currently closed. Please come back later.');
+    } catch (err) {
+      $('shop-name').textContent = 'Shop unavailable';
+      showError('upload-status', err.message);
+    }
+  })();
+</script>
+</body>
+</html>

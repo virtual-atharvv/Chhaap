@@ -9,7 +9,9 @@
     "test": "pnpm -r run test",
     "dev:api": "pnpm --filter @chhaap/api dev",
     "dev:agent": "pnpm --filter @chhaap/agent dev",
-    "dev:web": "pnpm --filter @chhaap/web dev"
+    "dev:web": "pnpm --filter @chhaap/web dev",
+    "demo:whatsapp": "pnpm --filter @chhaap/api demo:whatsapp",
+    "db:migrate": "pnpm --filter @chhaap/db migrate"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
