@@ -1,5 +1,5 @@
 import type {
-  ColorMode,
+  PageClassification,
   PaperSize,
   PrintSettings,
   RateCardEntry,
@@ -7,10 +7,7 @@ import type {
   Sides
 } from '@chhaap/shared';
 
-export interface PageClassification {
-  pageNumber: number; // 1-indexed
-  isColor: boolean;
-}
+export type { PageClassification } from '@chhaap/shared';
 
 export interface PricingInput {
   totalPages: number;
@@ -34,6 +31,27 @@ export interface PricingBreakdown {
   subtotalPaise: number;
   feePaise: number;
   gstPaise: number;
+  minOrderPaise: number;
+  totalPaise: number;
+}
+
+export interface OrderPricingItem {
+  totalPages: number;
+  perPageClassification?: PageClassification[];
+  settings: PrintSettings;
+  addonsPaise?: number;
+}
+
+export interface OrderPricingBreakdown {
+  items: PricingBreakdown[];
+  selectedCount: number;
+  bwPagesCount: number;
+  colorPagesCount: number;
+  sheets: number;
+  subtotalPaise: number;
+  feePaise: number;
+  gstPaise: number;
+  minOrderPaise: number;
   totalPaise: number;
 }
 
@@ -63,7 +81,8 @@ export const DEFAULT_SHOP_CONFIG: ShopPricingConfig = {
 };
 
 /**
- * Parses page range string (e.g., "1-3, 5, 7-10") into a sorted set of page numbers bounded by totalPages
+ * Parses a page range string (e.g., "1-3, 5, 7-10") into a sorted set of
+ * page numbers bounded by totalPages.
  */
 export function parsePageRange(pageRange: string | undefined, totalPages: number): number[] {
   if (totalPages <= 0) return [];
@@ -101,7 +120,8 @@ export function parsePageRange(pageRange: string | undefined, totalPages: number
 }
 
 /**
- * Finds rate per page from rate card
+ * Finds the rate per page from a shop rate card. Falls back to standard
+ * Indian defaults when the shop has not configured a particular combination.
  */
 export function lookupRate(
   rates: RateCardEntry[],
@@ -114,7 +134,11 @@ export function lookupRate(
   );
   if (match) return match.pricePerPagePaise;
 
-  // Fallback defaults
+  const fallback = DEFAULT_STANDARD_INDIAN_RATES.find(
+    (r) => r.paperSize === paperSize && r.colorMode === colorMode && r.sides === sides
+  );
+  if (fallback) return fallback.pricePerPagePaise;
+
   if (colorMode === 'color') {
     return sides === 'duplex' ? 800 : 1000;
   }
@@ -122,7 +146,7 @@ export function lookupRate(
 }
 
 /**
- * Pure Pricing Engine calculation
+ * Pure pricing engine for one document. All money is integer paise.
  */
 export function calculatePricing(
   input: PricingInput,
@@ -133,7 +157,6 @@ export function calculatePricing(
   const selectedPages = parsePageRange(settings.pageRange, totalPages);
   const selectedCount = selectedPages.length;
 
-  // Build map of page isColor
   const colorMap = new Map<number, boolean>();
   if (perPageClassification) {
     for (const c of perPageClassification) {
@@ -141,7 +164,6 @@ export function calculatePricing(
     }
   }
 
-  // Count BW vs Color pages according to colorMode setting
   let bwPagesCount = 0;
   let colorPagesCount = 0;
 
@@ -151,7 +173,6 @@ export function calculatePricing(
     } else if (settings.colorMode === 'color') {
       colorPagesCount++;
     } else {
-      // 'smart' mode: auto-detect per page
       const isDetectedColor = colorMap.get(pageNum) ?? false;
       if (isDetectedColor) {
         colorPagesCount++;
@@ -161,20 +182,14 @@ export function calculatePricing(
     }
   }
 
-  // Sheets calculation:
   // sheets = ceil(selectedCount / (pagesPerSheet * (duplex ? 2 : 1))) * copies
   const duplexMultiplier = settings.sides === 'duplex' ? 2 : 1;
   const pagesPerSheet = settings.pagesPerSheet || 1;
   const pagesPerPhysicalSheet = pagesPerSheet * duplexMultiplier;
-  const sheets = Math.ceil(selectedCount / pagesPerPhysicalSheet) * copies;
+  const sheets =
+    pagesPerPhysicalSheet > 0 ? Math.ceil(selectedCount / pagesPerPhysicalSheet) * copies : 0;
 
-  // Rates lookup
-  const ratePerPageBwPaise = lookupRate(
-    shopConfig.rates,
-    settings.paperSize,
-    'bw',
-    settings.sides
-  );
+  const ratePerPageBwPaise = lookupRate(shopConfig.rates, settings.paperSize, 'bw', settings.sides);
   const ratePerPageColorPaise = lookupRate(
     shopConfig.rates,
     settings.paperSize,
@@ -190,7 +205,7 @@ export function calculatePricing(
   const feePaise = shopConfig.platformConvenienceFeePaise;
   const gstPaise = Math.round((subtotalPaise + feePaise) * (shopConfig.gstRatePercent / 100));
 
-  // Invariant: total is at least minOrderPaise
+  // Invariant: total is at least minOrderPaise.
   const totalPaise = Math.max(subtotalPaise + feePaise + gstPaise, shopConfig.minOrderPaise);
 
   return {
@@ -208,6 +223,58 @@ export function calculatePricing(
     subtotalPaise,
     feePaise,
     gstPaise,
+    minOrderPaise: shopConfig.minOrderPaise,
     totalPaise
   };
+}
+
+/**
+ * Pricing for a multi-file order. The platform fee and GST are applied once
+ * per order, and the shop minimum applies to the whole order. This is the
+ * only function the API uses to price orders, so the quote, the order record,
+ * the Razorpay amount and the WhatsApp receipt cannot diverge.
+ */
+export function calculateOrderPricing(
+  items: OrderPricingItem[],
+  shopConfig: ShopPricingConfig = DEFAULT_SHOP_CONFIG
+): OrderPricingBreakdown {
+  const breakdowns = items.map((item) => calculatePricing(item, shopConfig));
+
+  const selectedCount = breakdowns.reduce((sum, b) => sum + b.selectedCount, 0);
+  const bwPagesCount = breakdowns.reduce((sum, b) => sum + b.bwPagesCount, 0);
+  const colorPagesCount = breakdowns.reduce((sum, b) => sum + b.colorPagesCount, 0);
+  const sheets = breakdowns.reduce((sum, b) => sum + b.sheets, 0);
+  const subtotalPaise = breakdowns.reduce((sum, b) => sum + b.subtotalPaise, 0);
+
+  const feePaise = shopConfig.platformConvenienceFeePaise;
+  const gstPaise = Math.round((subtotalPaise + feePaise) * (shopConfig.gstRatePercent / 100));
+  const minOrderPaise = shopConfig.minOrderPaise;
+  const totalPaise = Math.max(subtotalPaise + feePaise + gstPaise, minOrderPaise);
+
+  return {
+    items: breakdowns,
+    selectedCount,
+    bwPagesCount,
+    colorPagesCount,
+    sheets,
+    subtotalPaise,
+    feePaise,
+    gstPaise,
+    minOrderPaise,
+    totalPaise
+  };
+}
+
+/**
+ * Classifies each page as colour if any ink coverage is present.
+ * Exposed for tests and for the document pipeline.
+ */
+export function classifyPageCoverage(
+  coverage: Array<{ c: number; m: number; y: number }>,
+  threshold = 0.0005
+): PageClassification[] {
+  return coverage.map((page, index) => ({
+    pageNumber: index + 1,
+    isColor: page.c > threshold || page.m > threshold || page.y > threshold
+  }));
 }

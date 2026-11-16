@@ -6,13 +6,16 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -b",
-    "test": "node --test"
+    "test": "pnpm run build && tsc -p tsconfig.test.json && node --test dist-test/*.test.js",
+    "migrate": "pnpm run build && node dist/migrate.js"
   },
   "dependencies": {
-    "@chhaap/shared": "workspace:*"
+    "@chhaap/shared": "workspace:*",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.6.3"
   }
 }

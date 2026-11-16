@@ -6,7 +6,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -b",
-    "test": "node --test test/pricing.test.js"
+    "test": "pnpm run build && tsc -p tsconfig.test.json && node --test dist-test/*.test.js"
   },
   "dependencies": {
     "@chhaap/shared": "workspace:*"
