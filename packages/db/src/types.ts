@@ -265,6 +265,8 @@ export interface DatabaseRepository {
   getUserByPhone(phone: string): Promise<UserRecord | undefined>;
   getUserById(id: string): Promise<UserRecord | undefined>;
   createUser(input: CreateUserInput): Promise<UserRecord>;
+  addShopMember(shopId: string, userId: string, role?: string): Promise<void>;
+  getShopMembers(shopId: string): Promise<Array<{ shopId: string; userId: string; role: string }>>;
 
   // Agents & Printers
   getPrintersByShopId(shopId: string): Promise<PrinterRecord[]>;

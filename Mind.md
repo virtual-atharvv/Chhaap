@@ -270,6 +270,13 @@ Customer PWA / WhatsApp → Fastify API (`/v1/*`) → Memory or Postgres DB (`pa
 
 ## 9. CHANGELOG (newest first)
 
+### 2026-11-17 — S9-T3: add shop provisioning admin CLI and shared seed defaults
+- Added `apps/api/src/admin.ts` admin CLI with `create-shop`, `list-shops`, `set-shop-status`, `add-staff`, `seed-demo` (refuses in production).
+- Extracted `defaultShopSettings` and `defaultRateCards` in `packages/db` shared by both `seedDefaultData()` and the admin CLI.
+- Added `addShopMember` and `getShopMembers` to `DatabaseRepository` in memory and postgres repositories.
+- Added admin CLI unit tests (`apps/api/test/admin-cli.test.ts`) verifying idempotency, owner creation, 12 default rate cards, shop status changes, staff additions, and production refusal.
+- Documented shop onboarding in `docs/runbook.md` ("4.1 Onboarding a new shop in 5 minutes") and added `pnpm admin` to command reference.
+
 ### 2026-11-17 — S9-T2: fix web checkout flow, status screen and payment contract
 - Defined `CheckoutResponseSchema` in `packages/shared` as a discriminated union for `simulated` vs `razorpay` modes.
 - Updated `PaymentService.createCheckout` and `/v1/orders/:id/checkout` to return the typed contract; eliminated `shortUrl` from `customer.html`.
@@ -312,9 +319,9 @@ Customer PWA / WhatsApp → Fastify API (`/v1/*`) → Memory or Postgres DB (`pa
 
 ## 10. NEXT ACTIONS (ordered, concrete — rewrite every session)
 
-1. **ENG:** S9-T3 — Postgres onboarding & provisioning (report §7, §14.4): admin CLI `create-shop`, `list-shops`, `set-shop-status`, `add-staff`, `seed-demo`, shared rate card defaults, runbook update.
-2. **ENG:** S9-T4 — Upload scanning & unsafe-file policy (`FileScanner`, `ClamdScanner`, fail-closed in prod).
-3. **ENG:** S9-T5 — Authenticated previews & secret hygiene (`FILE_URL_SECRET`, HMAC signed URLs).
+1. **ENG:** S9-T4 — Upload scanning & unsafe-file policy (report §10, §14.5): FileScanner interface, ClamdScanner, NoopScanner, shared ingestFile() pipeline, reject unapproved Office files, fail-closed in prod.
+2. **ENG:** S9-T5 — Authenticated previews & secret hygiene (`FILE_URL_SECRET`, HMAC signed URLs).
+3. **ENG:** S9-T6 — Agent versioning & minimum-version enforcement.
 4. **HUMAN:** Create Meta Business account/app/WhatsApp product, use the test number, expose the webhook with `cloudflared`/`ngrok`, and complete the checklist in `docs/whatsapp-setup.md`; submit the six templates from `docs/whatsapp-templates.md`.
 5. **HUMAN:** Run a real Razorpay test-mode UPI payment through the production webhook; verify `payment.captured`/`payment_link.paid` dedupe and amount/currency checks (marked `UNVERIFIED: live Razorpay`).
 6. **HUMAN:** Build/install the agent on a Windows shop PC using `apps/agent/PACKAGING.md`; run the hardware checklist (duplex/colour/A3, offline, paper-out, reboot, no reprint after crash).

@@ -100,6 +100,41 @@ TEST_DATABASE_URL="postgresql://chhaap:change_me@localhost:5432/chhaap_test" \
 
 Run the Postgres suite only against a disposable test database.
 
+### 4.1 Onboarding a new shop in 5 minutes
+
+On a fresh or existing database (Postgres or memory mode), provision a new shop with the admin CLI:
+
+```bash
+pnpm admin create-shop \
+  --slug "lucknow-xerox" \
+  --name "Lucknow Xerox & Printers" \
+  --city "Lucknow" \
+  --owner-phone "9876543210" \
+  --owner-name "Rajesh Gupta" \
+  --min-order 500 \
+  --fee 100
+```
+
+This performs atomic, idempotent provisioning:
+1. Creates or reuses the owner user record with role `owner`.
+2. Creates the shop with status `active` and default settings.
+3. Maps the owner to `shop_members`.
+4. Provisions 12 standard rate cards across A4, A3, Legal (mono/color, single/duplex).
+5. Prints the customer order URL (`/s/lucknow-xerox`) and dashboard URL (`/shop/lucknow-xerox`).
+
+Next steps:
+1. **Owner login:** Log in at `/shop/<slug>` with WhatsApp OTP.
+2. **Pair shop PC:** Go to **Settings → Agent pairing**, click Generate code (valid 10 min), and run `node dist/index.js --pair=<code>` on the shop computer.
+3. **Customer WhatsApp orders:** Customers can text `PRINT <slug>` to the platform WhatsApp number.
+
+Admin CLI reference:
+```bash
+pnpm admin list-shops
+pnpm admin set-shop-status <slug> active|suspended
+pnpm admin add-staff --slug <slug> --phone <phone> [--name <name>]
+pnpm admin seed-demo   # seeds demo data; refuses in production
+```
+
 ## 5. Print agent (dev / shop PC)
 
 Development on Linux, no printer required:
@@ -212,6 +247,7 @@ sudo systemctl status chhaap-api
 pnpm build            # all packages
 pnpm test             # TS tests (memory DB + mocked WhatsApp/payments)
 pnpm smoke            # boots clean build on ephemeral port and tests /healthz + /readyz
+pnpm admin <cmd>      # shop provisioning CLI (create-shop, list-shops, etc.)
 pnpm dev:api          # API + static web UI with watch
 pnpm dev:agent        # print agent with watch
 pnpm demo:whatsapp    # offline transcript

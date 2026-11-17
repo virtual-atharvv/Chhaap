@@ -58,9 +58,51 @@ function parseJson<T>(value: unknown, fallback: T): T {
 // IN-MEMORY REPOSITORY (tests + zero-config development)
 // ============================================================================
 
+export function defaultShopSettings(options?: Partial<ShopRecord['settings']>): ShopRecord['settings'] {
+  return {
+    minOrderPaise: 500,
+    platformConvenienceFeePaise: 100,
+    gstRatePercent: 0,
+    isOpen: true,
+    upiVpa: '',
+    whatsappNumber: '',
+    ownerAlertsEnabled: true,
+    printerOfflineAlertEnabled: true,
+    orderFailedAlertEnabled: true,
+    dailySummaryEnabled: false,
+    ...options
+  };
+}
+
+export function defaultRateCards(shopId: string, minOrderPaise = 500): RateCardRecord[] {
+  const rates: Array<Omit<RateCardRecord, 'id' | 'shopId' | 'printerId' | 'minOrderPaise'>> = [
+    { paperSize: 'A4', colorMode: 'bw', sides: 'single', pricePerPagePaise: 200 },
+    { paperSize: 'A4', colorMode: 'bw', sides: 'duplex', pricePerPagePaise: 150 },
+    { paperSize: 'A4', colorMode: 'color', sides: 'single', pricePerPagePaise: 1000 },
+    { paperSize: 'A4', colorMode: 'color', sides: 'duplex', pricePerPagePaise: 800 },
+    { paperSize: 'A3', colorMode: 'bw', sides: 'single', pricePerPagePaise: 1000 },
+    { paperSize: 'A3', colorMode: 'bw', sides: 'duplex', pricePerPagePaise: 800 },
+    { paperSize: 'A3', colorMode: 'color', sides: 'single', pricePerPagePaise: 3000 },
+    { paperSize: 'A3', colorMode: 'color', sides: 'duplex', pricePerPagePaise: 2500 },
+    { paperSize: 'Legal', colorMode: 'bw', sides: 'single', pricePerPagePaise: 300 },
+    { paperSize: 'Legal', colorMode: 'bw', sides: 'duplex', pricePerPagePaise: 200 },
+    { paperSize: 'Legal', colorMode: 'color', sides: 'single', pricePerPagePaise: 1200 },
+    { paperSize: 'Legal', colorMode: 'color', sides: 'duplex', pricePerPagePaise: 1000 }
+  ];
+
+  return rates.map((r) => ({
+    id: `rate-${shopId}-${r.paperSize}-${r.colorMode}-${r.sides}`,
+    shopId,
+    printerId: null,
+    minOrderPaise,
+    ...r
+  }));
+}
+
 export class MemoryDatabase implements DatabaseRepository {
   users = new Map<string, UserRecord>();
   shops = new Map<string, ShopRecord>();
+  shopMembers = new Map<string, { shopId: string; userId: string; role: string }>();
   agents = new Map<string, AgentRecord>();
   printers = new Map<string, PrinterRecord>();
   rateCards = new Map<string, RateCardRecord>();
@@ -110,7 +152,7 @@ export class MemoryDatabase implements DatabaseRepository {
       gstNo: null,
       status: 'active',
       planId: 'starter',
-      settings: {
+      settings: defaultShopSettings({
         minOrderPaise: 500,
         platformConvenienceFeePaise: 100,
         gstRatePercent: 0,
@@ -121,9 +163,11 @@ export class MemoryDatabase implements DatabaseRepository {
         printerOfflineAlertEnabled: true,
         orderFailedAlertEnabled: true,
         dailySummaryEnabled: false
-      },
+      }),
       createdAt: nowIso()
     });
+
+    this.shopMembers.set(`${shopId}:${ownerId}`, { shopId, userId: ownerId, role: 'owner' });
 
     const agentId = 'agent-campus-1';
     const rawToken = 'test_agent_secret_token_123';
@@ -162,31 +206,18 @@ export class MemoryDatabase implements DatabaseRepository {
       createdAt: nowIso()
     });
 
-    const rates: Array<Omit<RateCardRecord, 'id' | 'shopId' | 'printerId' | 'minOrderPaise'>> = [
-      { paperSize: 'A4', colorMode: 'bw', sides: 'single', pricePerPagePaise: 200 },
-      { paperSize: 'A4', colorMode: 'bw', sides: 'duplex', pricePerPagePaise: 150 },
-      { paperSize: 'A4', colorMode: 'color', sides: 'single', pricePerPagePaise: 1000 },
-      { paperSize: 'A4', colorMode: 'color', sides: 'duplex', pricePerPagePaise: 800 },
-      { paperSize: 'A3', colorMode: 'bw', sides: 'single', pricePerPagePaise: 1000 },
-      { paperSize: 'A3', colorMode: 'bw', sides: 'duplex', pricePerPagePaise: 800 },
-      { paperSize: 'A3', colorMode: 'color', sides: 'single', pricePerPagePaise: 3000 },
-      { paperSize: 'A3', colorMode: 'color', sides: 'duplex', pricePerPagePaise: 2500 },
-      { paperSize: 'Legal', colorMode: 'bw', sides: 'single', pricePerPagePaise: 300 },
-      { paperSize: 'Legal', colorMode: 'bw', sides: 'duplex', pricePerPagePaise: 200 },
-      { paperSize: 'Legal', colorMode: 'color', sides: 'single', pricePerPagePaise: 1200 },
-      { paperSize: 'Legal', colorMode: 'color', sides: 'duplex', pricePerPagePaise: 1000 }
-    ];
-
+    const rates = defaultRateCards(shopId, 500);
     for (const r of rates) {
-      const id = `rate-${r.paperSize}-${r.colorMode}-${r.sides}`;
-      this.rateCards.set(id, {
-        id,
-        shopId,
-        printerId: null,
-        minOrderPaise: 500,
-        ...r
-      });
+      this.rateCards.set(r.id, r);
     }
+  }
+
+  async addShopMember(shopId: string, userId: string, role = 'staff'): Promise<void> {
+    this.shopMembers.set(`${shopId}:${userId}`, { shopId, userId, role });
+  }
+
+  async getShopMembers(shopId: string): Promise<Array<{ shopId: string; userId: string; role: string }>> {
+    return Array.from(this.shopMembers.values()).filter((m) => m.shopId === shopId);
   }
 
   // --- Shops & Users ---
@@ -1163,6 +1194,20 @@ export class PostgresDatabase implements DatabaseRepository {
       ]
     );
     return mapUserRow(res.rows[0]);
+  }
+
+  async addShopMember(shopId: string, userId: string, role = 'staff'): Promise<void> {
+    await this.query(
+      `INSERT INTO shop_members (shop_id, user_id, role)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (shop_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      [shopId, userId, role]
+    );
+  }
+
+  async getShopMembers(shopId: string): Promise<Array<{ shopId: string; userId: string; role: string }>> {
+    const res = await this.query('SELECT shop_id, user_id, role FROM shop_members WHERE shop_id = $1', [shopId]);
+    return res.rows.map((r: any) => ({ shopId: r.shop_id, userId: r.user_id, role: r.role }));
   }
 
   // --- Agents & Printers ---

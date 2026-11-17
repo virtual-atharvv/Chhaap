@@ -8,6 +8,7 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "smoke": "node apps/api/scripts/smoke.js",
+    "admin": "pnpm --filter @chhaap/api admin",
     "dev:api": "pnpm --filter @chhaap/api dev",
     "dev:agent": "pnpm --filter @chhaap/agent dev",
     "demo:whatsapp": "pnpm --filter @chhaap/api demo:whatsapp",
