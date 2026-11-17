@@ -8,6 +8,9 @@ export interface AppConfig {
   nodeEnv: string;
   paymentsMode: 'simulated' | 'razorpay';
   whatsappMode: 'mock' | 'cloud';
+  scanMode: 'off' | 'clamav';
+  officeUploads: 'enabled' | 'disabled';
+  allowUnscannedPdfImages: boolean;
   jwtSecret: string;
   agentTokenPepper: string;
   otpPepper: string;
@@ -52,6 +55,9 @@ export function loadConfig(): AppConfig {
   const nodeEnv = process.env.NODE_ENV || 'development';
   const paymentsMode = (process.env.PAYMENTS_MODE || 'simulated') as 'simulated' | 'razorpay';
   const whatsappMode = (process.env.WHATSAPP_MODE || 'mock') as 'mock' | 'cloud';
+  const scanMode = (process.env.SCAN_MODE || 'off') as 'off' | 'clamav';
+  const officeUploads = (process.env.OFFICE_UPLOADS || 'disabled') as 'enabled' | 'disabled';
+  const allowUnscannedPdfImages = bool(process.env.ALLOW_UNSCANNED_PDF_IMAGES, false);
 
   if (nodeEnv === 'production' && paymentsMode === 'simulated') {
     throw new Error('Fatal: Simulated payments cannot be enabled in production (PAYMENTS_MODE=simulated)');
@@ -59,6 +65,16 @@ export function loadConfig(): AppConfig {
 
   if (nodeEnv === 'production' && whatsappMode === 'mock') {
     throw new Error('Fatal: WHATSAPP_MODE=mock is not allowed in production');
+  }
+
+  if (nodeEnv === 'production') {
+    if (scanMode === 'off') {
+      if (officeUploads === 'enabled' || !allowUnscannedPdfImages) {
+        throw new Error(
+          'Fatal: In production, SCAN_MODE=off is refused unless OFFICE_UPLOADS=disabled and ALLOW_UNSCANNED_PDF_IMAGES=true (conscious risk acceptance)'
+        );
+      }
+    }
   }
 
   if (nodeEnv === 'production') {

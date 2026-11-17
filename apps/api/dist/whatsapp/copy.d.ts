@@ -1,0 +1,40 @@
+import type { WaLanguage } from '@chhaap/shared';
+export interface CopyStrings {
+    chooseLanguage: string;
+    languageSet: string;
+    welcome: (shopName: string) => string;
+    printerOffline: (shopName: string) => string;
+    shopClosed: (shopName: string) => string;
+    askFile: string;
+    fileAnalyzed: (name: string, pages: number, colorPages: number) => string;
+    chooseColor: string;
+    chooseSides: string;
+    chooseCopies: string;
+    askCopiesOther: string;
+    orderReview: (shopName: string, itemsSummary: string, totalRupees: string) => string;
+    paymentLinkMessage: (url: string, totalRupees: string) => string;
+    paymentReminder: (url: string, minutes: number) => string;
+    paymentConfirmed: (token: string) => string;
+    receipt: (shopName: string, token: string, summary: string, totalRupees: string) => string;
+    printingStarted: (token: string) => string;
+    printReady: (token: string, shopName: string) => string;
+    printFailed: (token: string) => string;
+    refunded: (token: string) => string;
+    optedOut: string;
+    optedIn: string;
+    help: string;
+    canceled: string;
+    invalidFile: (reason?: string) => string;
+    noActiveOrder: string;
+    alreadyPaid: string;
+    sessionExpired: string;
+    ownerOnly: string;
+    payNow: string;
+    changeOptions: string;
+    cancelOrder: string;
+    addFile: string;
+    fileLimit: string;
+    statusLine: (token: string, status: string, totalRupees: string) => string;
+}
+export declare const COPY: Record<WaLanguage, CopyStrings>;
+//# sourceMappingURL=copy.d.ts.map
