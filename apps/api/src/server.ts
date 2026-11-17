@@ -124,6 +124,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   };
   app.get('/', page('index.html'));
   app.get('/s/:slug', page('customer.html'));
+  app.get('/o/:orderId', page('order.html'));
   app.get('/shop/:slug', page('shop.html'));
   app.get('/pay/:linkId', page('pay.html'));
 

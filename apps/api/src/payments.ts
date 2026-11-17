@@ -1,19 +1,11 @@
 import crypto from 'node:crypto';
 import { db, type OrderRecord, type PaymentRecord } from '@chhaap/db';
-import { safeEqual } from '@chhaap/shared';
+import { safeEqual, type CheckoutResponse } from '@chhaap/shared';
 import { gateway } from './websocket-gateway.js';
 import { loadConfig } from './config.js';
 import { orderNotifier } from './whatsapp/notifier.js';
 
-export interface CheckoutSession {
-  razorpayOrderId: string;
-  amountPaise: number;
-  currency: string;
-  keyId: string;
-  orderToken: string;
-  publicToken: string;
-  orderId: string;
-}
+export type CheckoutSession = CheckoutResponse;
 
 export interface PaymentLinkSession {
   paymentLinkId: string;
@@ -111,15 +103,15 @@ export class PaymentService {
     }
 
     const existing = await db.getPaymentByOrderId(order.id);
+    const simulatedPayUrl = `/v1/orders/${order.id}/fake-pay?token=${encodeURIComponent(order.publicToken)}`;
+
     if (existing && existing.status === 'created' && this.config.paymentsMode === 'simulated') {
       return {
-        razorpayOrderId: existing.razorpayOrderId,
+        mode: 'simulated',
+        orderId: order.id,
         amountPaise: order.totalPaise,
         currency: order.currency,
-        keyId: this.config.razorpayKeyId,
-        orderToken: order.token,
-        publicToken: order.publicToken,
-        orderId: order.id
+        simulatedPayUrl
       };
     }
 
@@ -159,14 +151,24 @@ export class PaymentService {
       });
     }
 
+    if (this.config.paymentsMode === 'simulated') {
+      return {
+        mode: 'simulated',
+        orderId: order.id,
+        amountPaise: order.totalPaise,
+        currency: order.currency,
+        simulatedPayUrl
+      };
+    }
+
     return {
-      razorpayOrderId,
+      mode: 'razorpay',
+      orderId: order.id,
       amountPaise: order.totalPaise,
       currency: order.currency,
       keyId: this.config.razorpayKeyId,
-      orderToken: order.token,
-      publicToken: order.publicToken,
-      orderId: order.id
+      razorpayOrderId,
+      prefill: order.customerPhone ? { contact: order.customerPhone } : undefined
     };
   }
 
@@ -385,8 +387,14 @@ export class PaymentService {
     }
 
     const checkout = await this.createCheckout(orderId);
+    const payment = await db.getPaymentByOrderId(orderId);
+    const razorpayOrderId =
+      checkout.mode === 'razorpay'
+        ? checkout.razorpayOrderId
+        : (payment?.razorpayOrderId || `order_sim_${order.id}`);
+
     return this.handlePaymentCaptured({
-      razorpayOrderId: checkout.razorpayOrderId,
+      razorpayOrderId,
       razorpayPaymentId: `pay_sim_${crypto.randomUUID()}`,
       amountPaise: order.totalPaise,
       currency: order.currency,

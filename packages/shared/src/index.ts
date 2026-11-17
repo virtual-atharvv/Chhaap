@@ -383,3 +383,38 @@ export function formatE164Indian(phone: string): string {
   const national = normalizePhone(phone);
   return national.length === 10 ? `+91${national}` : phone;
 }
+
+// ============================================================================
+// CHECKOUT CONTRACT (T2)
+// ============================================================================
+
+export const SimulatedCheckoutResponseSchema = z.object({
+  mode: z.literal('simulated'),
+  orderId: z.string(),
+  amountPaise: z.number().int().nonnegative(),
+  currency: z.string(),
+  simulatedPayUrl: z.string()
+});
+export type SimulatedCheckoutResponse = z.infer<typeof SimulatedCheckoutResponseSchema>;
+
+export const RazorpayCheckoutResponseSchema = z.object({
+  mode: z.literal('razorpay'),
+  orderId: z.string(),
+  amountPaise: z.number().int().nonnegative(),
+  currency: z.string(),
+  keyId: z.string(),
+  razorpayOrderId: z.string(),
+  prefill: z
+    .object({
+      contact: z.string().optional()
+    })
+    .optional()
+});
+export type RazorpayCheckoutResponse = z.infer<typeof RazorpayCheckoutResponseSchema>;
+
+export const CheckoutResponseSchema = z.discriminatedUnion('mode', [
+  SimulatedCheckoutResponseSchema,
+  RazorpayCheckoutResponseSchema
+]);
+export type CheckoutResponse = z.infer<typeof CheckoutResponseSchema>;
+

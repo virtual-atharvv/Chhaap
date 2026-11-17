@@ -270,6 +270,13 @@ Customer PWA / WhatsApp → Fastify API (`/v1/*`) → Memory or Postgres DB (`pa
 
 ## 9. CHANGELOG (newest first)
 
+### 2026-11-17 — S9-T2: fix web checkout flow, status screen and payment contract
+- Defined `CheckoutResponseSchema` in `packages/shared` as a discriminated union for `simulated` vs `razorpay` modes.
+- Updated `PaymentService.createCheckout` and `/v1/orders/:id/checkout` to return the typed contract; eliminated `shortUrl` from `customer.html`.
+- Implemented `/o/:orderId` status screen (`apps/web/public/order.html`) with `#t=<publicToken>` URL fragment authentication, SSE live updates, 3s polling fallback, and state timeline up to pickup token display.
+- Added back-button state restoration in `customer.html` from `sessionStorage` preventing duplicate orders.
+- Added E2E browser-equivalent test `apps/api/test/t2-web-checkout-flow.test.ts` proving full upload → checkout → simulated payment → virtual agent print → completed status with pickup token. Razorpay mode marked `UNVERIFIED: live Razorpay`.
+
 ### 2026-11-17 — S9-T1: fix dev runners, add .env loader and smoke test
 - Made dev runners work on Node 20 via watch compilation runner in `apps/api/scripts/dev.js` and `apps/agent/scripts/dev.js`.
 - Removed broken `dev:web` from root `package.json`.
@@ -305,11 +312,11 @@ Customer PWA / WhatsApp → Fastify API (`/v1/*`) → Memory or Postgres DB (`pa
 
 ## 10. NEXT ACTIONS (ordered, concrete — rewrite every session)
 
-1. **ENG:** S9-T2 — Web checkout completes payment (report §14.2): define `CheckoutResponseSchema`, simulated vs razorpay mode, `/o/:orderId` status view with `#t=...`, polling fallback, back-button idempotency, regression tests.
-2. **ENG:** S9-T3 — Postgres onboarding & provisioning (admin CLI `create-shop`, `list-shops`, `set-shop-status`, `add-staff`, `seed-demo`).
-3. **ENG:** S9-T4 — Upload scanning & unsafe-file policy (`FileScanner`, `ClamdScanner`, fail-closed in prod).
+1. **ENG:** S9-T3 — Postgres onboarding & provisioning (report §7, §14.4): admin CLI `create-shop`, `list-shops`, `set-shop-status`, `add-staff`, `seed-demo`, shared rate card defaults, runbook update.
+2. **ENG:** S9-T4 — Upload scanning & unsafe-file policy (`FileScanner`, `ClamdScanner`, fail-closed in prod).
+3. **ENG:** S9-T5 — Authenticated previews & secret hygiene (`FILE_URL_SECRET`, HMAC signed URLs).
 4. **HUMAN:** Create Meta Business account/app/WhatsApp product, use the test number, expose the webhook with `cloudflared`/`ngrok`, and complete the checklist in `docs/whatsapp-setup.md`; submit the six templates from `docs/whatsapp-templates.md`.
-5. **HUMAN:** Run a real Razorpay test-mode UPI payment through the production webhook; verify `payment.captured`/`payment_link.paid` dedupe and amount/currency checks.
+5. **HUMAN:** Run a real Razorpay test-mode UPI payment through the production webhook; verify `payment.captured`/`payment_link.paid` dedupe and amount/currency checks (marked `UNVERIFIED: live Razorpay`).
 6. **HUMAN:** Build/install the agent on a Windows shop PC using `apps/agent/PACKAGING.md`; run the hardware checklist (duplex/colour/A3, offline, paper-out, reboot, no reprint after crash).
 7. **ENG:** Run the Postgres contract suite and migration/restore drill against a disposable database (`TEST_DATABASE_URL`, `pnpm db:migrate`); fix any live-only differences.
 

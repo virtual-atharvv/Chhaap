@@ -200,6 +200,13 @@
         stored[state.order.id] = state.token;
         sessionStorage.setItem('chhaap_order_tokens', JSON.stringify(stored));
       }
+      try {
+        sessionStorage.setItem('chhaap_active_order_' + slug, JSON.stringify({
+          orderId: state.order.id,
+          token: state.token,
+          fileId: state.file.fileId
+        }));
+      } catch {}
       renderPricing(result.pricing);
       $('options-card').classList.add('hidden');
       $('pay-card').classList.remove('hidden');
@@ -263,6 +270,17 @@
   $('create-btn').addEventListener('click', createOrder);
   $('change-btn').addEventListener('click', changeOptions);
 
+  function loadRazorpayScript() {
+    if (window.Razorpay) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Razorpay Checkout SDK'));
+      document.head.appendChild(script);
+    });
+  }
+
   $('pay-btn').addEventListener('click', async () => {
     if (!state.order || !state.token) return;
     $('pay-btn').disabled = true;
@@ -271,8 +289,39 @@
       const result = await api('/v1/orders/' + encodeURIComponent(state.order.id) + '/checkout?token=' + encodeURIComponent(state.token), {
         method: 'POST'
       });
-      if (!result.shortUrl) throw new Error('Payment link missing');
-      location.href = result.shortUrl;
+
+      if (result.mode === 'simulated') {
+        await api(result.simulatedPayUrl, { method: 'POST' });
+        location.href = '/o/' + encodeURIComponent(state.order.id) + '#t=' + encodeURIComponent(state.token);
+        return;
+      }
+
+      if (result.mode === 'razorpay') {
+        await loadRazorpayScript();
+        const options = {
+          key: result.keyId,
+          amount: result.amountPaise,
+          currency: result.currency || 'INR',
+          name: state.shop ? state.shop.name : 'Chhaap Print',
+          description: 'Print order #' + state.order.id.slice(0, 8),
+          order_id: result.razorpayOrderId,
+          prefill: result.prefill || {},
+          handler: function () {
+            // Client success handler must NOT mark anything paid; only moves UI to status screen.
+            location.href = '/o/' + encodeURIComponent(state.order.id) + '#t=' + encodeURIComponent(state.token);
+          },
+          modal: {
+            ondismiss: function () {
+              $('pay-btn').disabled = false;
+            }
+          }
+        };
+        const rzp = new window.Razorpay(options);
+        rzp.open();
+        return;
+      }
+
+      throw new Error('Unsupported checkout mode: ' + result.mode);
     } catch (err) {
       showError('pay-error', err.message);
       $('pay-btn').disabled = false;
@@ -291,6 +340,39 @@
       pill.style.background = data.shop.printerOnline ? '#dcfce7' : '#fee2e2';
       pill.style.color = data.shop.printerOnline ? '#166534' : '#991b1b';
       if (!data.shop.isOpen) showError('upload-status', 'This shop is currently closed. Please come back later.');
+
+      // Check for back-button restore of active order
+      try {
+        const saved = JSON.parse(sessionStorage.getItem('chhaap_active_order_' + slug) || 'null');
+        if (saved && saved.orderId && saved.token) {
+          const ord = await api('/v1/orders/' + encodeURIComponent(saved.orderId) + '?token=' + encodeURIComponent(saved.token));
+          if (ord && ord.order) {
+            if (['paid', 'queued', 'printing', 'completed'].includes(ord.order.status)) {
+              location.href = '/o/' + encodeURIComponent(saved.orderId) + '#t=' + encodeURIComponent(saved.token);
+              return;
+            } else if (['draft', 'awaiting_payment'].includes(ord.order.status)) {
+              state.order = ord.order;
+              state.token = saved.token;
+              state.file = { fileId: saved.fileId };
+              if (ord.order.items && ord.order.items[0]) {
+                const item = ord.order.items[0];
+                renderPricing({
+                  bwPagesCount: item.bwPages || 0,
+                  colorPagesCount: item.colourPages || 0,
+                  sheets: item.sheets || 1,
+                  subtotalPaise: ord.order.subtotalPaise || 0,
+                  feePaise: ord.order.feePaise || 0,
+                  gstPaise: ord.order.gstPaise || 0,
+                  totalPaise: ord.order.totalPaise || 0
+                });
+                $('options-card').classList.add('hidden');
+                $('upload-card').classList.add('hidden');
+                $('pay-card').classList.remove('hidden');
+              }
+            }
+          }
+        }
+      } catch {}
     } catch (err) {
       $('shop-name').textContent = 'Shop unavailable';
       showError('upload-status', err.message);

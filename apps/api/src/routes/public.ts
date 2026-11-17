@@ -43,6 +43,7 @@ function publicOrderView(order: {
     id: order.id,
     shopId: order.shopId,
     token: order.token,
+    pickupToken: order.token,
     channel: order.channel,
     status: order.status,
     subtotalPaise: order.subtotalPaise,
