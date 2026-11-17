@@ -43,5 +43,11 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Smoke check
+        run: pnpm smoke
+
+      - name: Dev runner smoke check
+        run: timeout 5s pnpm dev:api || [ $? -eq 124 ]
+
       - name: WhatsApp mock demo
         run: pnpm demo:whatsapp

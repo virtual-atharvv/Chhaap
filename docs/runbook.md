@@ -37,6 +37,7 @@ cp .env.example .env
 pnpm install --frozen-lockfile
 pnpm build
 pnpm test
+pnpm smoke
 pnpm dev:api
 ```
 
@@ -210,8 +211,9 @@ sudo systemctl status chhaap-api
 ```bash
 pnpm build            # all packages
 pnpm test             # TS tests (memory DB + mocked WhatsApp/payments)
-pnpm dev:api          # API + static web UI
-pnpm dev:agent        # print agent
+pnpm smoke            # boots clean build on ephemeral port and tests /healthz + /readyz
+pnpm dev:api          # API + static web UI with watch
+pnpm dev:agent        # print agent with watch
 pnpm demo:whatsapp    # offline transcript
 pnpm db:migrate       # apply Postgres schema
 ```

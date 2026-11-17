@@ -1,3 +1,7 @@
+import { loadEnv } from './env.js';
+
+loadEnv();
+
 export interface AppConfig {
   port: number;
   host: string;

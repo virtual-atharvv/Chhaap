@@ -270,6 +270,13 @@ Customer PWA / WhatsApp → Fastify API (`/v1/*`) → Memory or Postgres DB (`pa
 
 ## 9. CHANGELOG (newest first)
 
+### 2026-11-17 — S9-T1: fix dev runners, add .env loader and smoke test
+- Made dev runners work on Node 20 via watch compilation runner in `apps/api/scripts/dev.js` and `apps/agent/scripts/dev.js`.
+- Removed broken `dev:web` from root `package.json`.
+- Added dependency-free .env loader in `apps/api/src/env.ts` and `apps/agent/src/env.ts` with unit tests covering override rules, quotes, and missing files (`apps/api/test/env-loader.test.ts`).
+- Added `pnpm smoke` command (`apps/api/scripts/smoke.js`) and added both smoke test and 5s dev-runner smoke test to `.github/workflows/ci.yml`.
+- Updated `docs/runbook.md` with `pnpm smoke` in first-run and command reference.
+
 ### 2026-11-16 — Phase 2: bug-fix sweep + WhatsApp + Windows agent scaffold
 
 - Rewrote shared contracts, pricing engine, DB types/schema/memory+Postgres repositories and idempotent migration runner; added contract tests.
@@ -298,13 +305,13 @@ Customer PWA / WhatsApp → Fastify API (`/v1/*`) → Memory or Postgres DB (`pa
 
 ## 10. NEXT ACTIONS (ordered, concrete — rewrite every session)
 
-1. **HUMAN:** Create Meta Business account/app/WhatsApp product, use the test number, expose the webhook with `cloudflared`/`ngrok`, and complete the checklist in `docs/whatsapp-setup.md`; submit the six templates from `docs/whatsapp-templates.md`.
-2. **HUMAN:** Run a real Razorpay test-mode UPI payment through the production webhook; verify `payment.captured`/`payment_link.paid` dedupe and amount/currency checks.
-3. **HUMAN:** Build/install the agent on a Windows shop PC using `apps/agent/PACKAGING.md`; run the hardware checklist (duplex/colour/A3, offline, paper-out, reboot, no reprint after crash).
-4. **ENG:** Run the Postgres contract suite and migration/restore drill against a disposable database (`TEST_DATABASE_URL`, `pnpm db:migrate`); fix any live-only differences.
-5. **ENG:** Install LibreOffice + ClamAV, wire timeouts/concurrency, and add conversion/scan integration tests before accepting Office files in production.
-6. **ENG:** Complete pilot hardening: real QR standee, privacy/refund policy, backup/restore drill, log aggregation/Sentry, and one load test at exam-rush volumes.
-7. **HUMAN:** Visit 10 shops; validate printer/OS/pricing/pain points and sign 3 pilot shops before adding features.
+1. **ENG:** S9-T2 — Web checkout completes payment (report §14.2): define `CheckoutResponseSchema`, simulated vs razorpay mode, `/o/:orderId` status view with `#t=...`, polling fallback, back-button idempotency, regression tests.
+2. **ENG:** S9-T3 — Postgres onboarding & provisioning (admin CLI `create-shop`, `list-shops`, `set-shop-status`, `add-staff`, `seed-demo`).
+3. **ENG:** S9-T4 — Upload scanning & unsafe-file policy (`FileScanner`, `ClamdScanner`, fail-closed in prod).
+4. **HUMAN:** Create Meta Business account/app/WhatsApp product, use the test number, expose the webhook with `cloudflared`/`ngrok`, and complete the checklist in `docs/whatsapp-setup.md`; submit the six templates from `docs/whatsapp-templates.md`.
+5. **HUMAN:** Run a real Razorpay test-mode UPI payment through the production webhook; verify `payment.captured`/`payment_link.paid` dedupe and amount/currency checks.
+6. **HUMAN:** Build/install the agent on a Windows shop PC using `apps/agent/PACKAGING.md`; run the hardware checklist (duplex/colour/A3, offline, paper-out, reboot, no reprint after crash).
+7. **ENG:** Run the Postgres contract suite and migration/restore drill against a disposable database (`TEST_DATABASE_URL`, `pnpm db:migrate`); fix any live-only differences.
 
 ---
 

@@ -1,3 +1,7 @@
+import { loadEnv } from './env.js';
+
+loadEnv();
+
 import WebSocket from 'ws';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
